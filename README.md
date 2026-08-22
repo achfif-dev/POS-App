@@ -1,71 +1,71 @@
 # Kasir POS (Full Offline) — Android Kotlin + Jetpack Compose
 
-Fondasi arsitektur Clean Architecture (data / domain / presentation / di) untuk aplikasi
-kasir offline-first, siap di-build otomatis lewat GitHub Actions tanpa perlu PC lokal.
+Aplikasi kasir offline-first, Clean Architecture, siap di-build otomatis lewat GitHub Actions
+tanpa perlu PC lokal.
 
-## Yang sudah diimplementasikan penuh (siap pakai)
+## Fitur yang sudah diimplementasikan penuh
 
-- **Struktur project** Clean Architecture lengkap (`data`, `domain`, `presentation`, `di`).
-- **`app/build.gradle.kts`** — semua dependency yang diminta: Compose, Room, Hilt,
-  Navigation, CameraX + ML Kit, ESC/POS printer (DantSu), Apache POI (Excel), Coroutines.
-- **Room Database** — `ProductEntity`, `CategoryEntity`, `TransactionEntity`,
-  `TransactionItemEntity`, `StockAdjustmentEntity` beserta DAO & query laporan
-  (ringkasan penjualan, laba kotor, top-selling items).
-- **Domain layer** — `Cart` model (subtotal/diskon/pajak/total otomatis) dan
-  `CheckoutUseCase` yang menyimpan transaksi + item secara atomik dan mengurangi stok.
-- **`PosViewModel`** — state kasir reaktif (StateFlow), search + filter kategori,
-  tambah/kurang item, diskon per-item & per-transaksi, checkout.
-- **`PosScreen`** — UI Compose Material 3: grid produk, keranjang, ringkasan
-  subtotal/pajak/total, modal pembayaran (Cash/Debit/QRIS) via `ModalBottomSheet`.
-- **Hilt DI** — `DatabaseModule` menyediakan `AppDatabase` + semua DAO sebagai singleton.
-- **`.github/workflows/android_build.yml`** — build otomatis saat push ke `main`:
-  lint → unit test → build APK debug & release → upload sebagai Build Artifact
-  yang bisa didownload langsung dari tab **Actions**.
+- **Struktur project** Clean Architecture (`data`, `domain`, `presentation`, `di`).
+- **Room Database** — Produk, Kategori, Transaksi + Item, Penyesuaian Stok, lengkap dengan
+  query laporan (omzet, laba kotor, top-selling items).
+- **Kasir (POS Screen)** — grid produk, pencarian, keranjang, diskon per-item/transaksi,
+  pajak otomatis, checkout Cash/Debit/QRIS.
+- **Manajemen Produk** — CRUD lengkap (nama, SKU, harga beli/jual, stok, alert stok tipis,
+  diskon, varian) + kelola kategori.
+- **Scan Barcode** — CameraX + ML Kit, otomatis menambahkan produk ke keranjang begitu
+  barcode terbaca (`presentation/scanner/BarcodeScannerScreen.kt`).
+- **Cetak Struk Bluetooth (ESC/POS)** — `data/printer/PrinterRepository.kt` menggunakan
+  DantSu/ESCPOS-ThermalPrinter-Android, terhubung ke printer yang sudah di-pair. Dipicu dari
+  dialog struk setelah checkout berhasil.
+- **Export PDF Invoice** — `data/export/PdfInvoiceGenerator.kt` memakai
+  `android.graphics.pdf.PdfDocument` native (tanpa dependency tambahan), langsung dibagikan
+  lewat Share Menu/WhatsApp.
+- **Export Excel/CSV** — `data/export/ExcelExporter.kt` (Apache POI) untuk produk & riwayat
+  transaksi, plus opsi CSV ringan. Diakses dari layar Pengaturan.
+- **Backup & Restore** — `data/backup/BackupRepository.kt` meng-copy file database SQLite
+  secara utuh (termasuk checkpoint WAL) untuk memastikan integritas data.
+- **Laporan Penjualan** — `presentation/report/ReportScreen.kt`: filter Hari Ini/Minggu
+  Ini/Bulan Ini, ringkasan omzet & laba kotor, daftar produk terlaris.
+- **Stok & Inventaris** — `presentation/stock/StockScreen.kt`: stok masuk/keluar/opname
+  dengan riwayat, filter stok tipis.
+- **`.github/workflows/android_build.yml`** — build otomatis: lint → unit test → APK debug
+  & release ter-upload sebagai Build Artifact.
 
-## Yang perlu kamu tambahkan (kerangka arsitektur sudah mendukung, tinggal isi UI/logic)
+## Yang masih berupa penyempurnaan opsional (bukan blocker untuk pemakaian)
 
-Kode-kode berikut butuh implementasi tambahan yang scope-nya besar sendiri-sendiri —
-saya sengaja tidak memaksakan semuanya dalam satu paket agar kualitas kode yang sudah
-ada tetap valid dan bisa langsung di-build:
-
-1. **Scan Barcode (CameraX + ML Kit)** — buat `BarcodeScannerScreen.kt` di
-   `presentation/scanner/`, gunakan `ImageAnalysis` + `BarcodeScanning.getClient()`,
-   lalu panggil `productRepository.findBySku(hasil)` dan `viewModel.addToCart(...)`.
-2. **Cetak Struk Bluetooth (ESC/POS)** — pakai `com.dantsu.escposprinter.EscPosPrinter`
-   (sudah ada di dependency). Buat `PrinterRepository` untuk connect via
-   `BluetoothPrintersConnections.selectFirstPaired()` dan format struk dari
-   `TransactionEntity` + `TransactionItemEntity`.
-3. **Export PDF Invoice** — gunakan `android.graphics.pdf.PdfDocument` (built-in,
-   tanpa dependency tambahan) untuk render struk ke PDF, simpan ke
-   `getExternalFilesDir("exports")`, lalu share via `FileProvider` (authority sudah
-   dikonfigurasi di `AndroidManifest.xml`).
-4. **Export Excel/CSV** — Apache POI sudah ada di dependency; buat
-   `ExportUseCase` yang membaca `productRepository.getAllForExport()` /
-   riwayat transaksi lalu menulis `XSSFWorkbook`.
-5. **Backup & Restore** — cara paling aman untuk Room adalah copy file database
-   (`context.getDatabasePath("pos_database")`) ke penyimpanan lokal untuk backup,
-   dan menimpanya kembali (dengan app database tertutup) untuk restore.
-6. **Manajemen Produk & Kategori (CRUD UI)**, **Laporan penjualan (UI grafik)**,
-   **Stok Opname (UI)** — gunakan pola yang sama dengan `PosViewModel`/`PosScreen`
-   (repository sudah menyediakan semua query yang dibutuhkan).
+- **Nama toko** saat ini hardcode `"Toko Saya"` di struk/PDF (`PosViewModel.printReceipt()` /
+  `exportReceiptPdf()`). Tambahkan layar "Profil Toko" + simpan ke DataStore/SharedPreferences
+  bila ingin bisa diubah dari UI.
+- **Varian produk** baru berupa field teks bebas (`variantName`), belum ada UI matrix varian
+  (mis. Ukuran x Warna dengan stok terpisah per kombinasi).
+- **QRIS statis** saat ini hanya tercatat sebagai metode pembayaran; belum ada tampilan
+  gambar QRIS di layar pembayaran. Tambahkan `Image` dari file QRIS yang di-upload pemilik
+  toko di layar Pengaturan bila diperlukan.
+- **Riwayat backup otomatis terjadwal** belum ada (saat ini backup manual via tombol).
+  `BackupRepository.listLocalBackups()` sudah siap dipakai untuk menampilkan riwayat backup
+  di UI bila mau dikembangkan lebih lanjut.
+- **Multi-user/kasir dengan PIN login** belum ada — saat ini single-user.
 
 ## Alur kerja GitHub Actions (tanpa PC)
 
 1. Upload/commit seluruh isi folder ini ke repo GitHub kamu lewat web UI.
 2. Push ke branch `main` (atau jalankan manual lewat tab **Actions → Run workflow**).
 3. Setelah build selesai, buka run terkait di tab **Actions**, scroll ke
-   **Artifacts**, download `app-debug-apk` atau `app-release-apk`.
-4. APK release belum ditandatangani (unsigned) — untuk distribusi publik, tambahkan
-   signing config di `app/build.gradle.kts` menggunakan GitHub Secrets
-   (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, dst.), pola yang sama seperti workflow
-   GWG Super App kamu.
+   **Artifacts**, download `app-debug-apk` (langsung bisa diinstall) atau `app-release-apk`
+   (unsigned, perlu signing config sebelum dipakai produksi).
 
-## Catatan teknis
+## Catatan teknis penting
 
-- Workflow CI menggunakan `gradle/actions/setup-gradle` (bukan `./gradlew`) supaya
-  repo tetap ringan tanpa perlu meng-commit `gradle-wrapper.jar` biner. Kalau kamu
-  ingin pakai wrapper standar, jalankan `gradle wrapper` sekali di Android Studio,
-  commit hasilnya, lalu ganti step di workflow menjadi `./gradlew ...`.
-- Skema Room di-set `fallbackToDestructiveMigration()` untuk mempercepat development
-  awal. Sebelum rilis ke pengguna nyata, ganti dengan `Migration` resmi supaya data
-  pengguna tidak hilang saat update versi app.
+- `minSdk = 26` (Android 8.0+) karena Apache POI (export Excel) memakai
+  `java.lang.invoke.MethodHandle` yang baru didukung mulai API 26.
+- Workflow CI menggunakan `gradle/actions/setup-gradle` dengan `gradle-version: '8.7'` (bukan
+  `./gradlew`) supaya repo tetap ringan tanpa commit `gradle-wrapper.jar` biner.
+- `proguard-rules.pro` sudah menyertakan `-dontwarn` untuk dependency opsional Apache POI
+  (OSGi, Batik/SVG) yang tidak dipakai di path Android manapun di app ini.
+- Skema Room di-set `exportSchema = false` dan `fallbackToDestructiveMigration()` untuk
+  mempercepat development awal. Sebelum rilis ke pengguna nyata, aktifkan `exportSchema = true`
+  + tulis `Migration` resmi supaya data pengguna tidak hilang saat update versi app.
+- Izin runtime yang diminta: Kamera (scan barcode) dan Bluetooth Connect/Scan (Android 12+,
+  untuk cetak struk). Printer harus sudah di-pair lewat pengaturan Bluetooth sistem terlebih
+  dahulu sebelum mencetak dari app.
+

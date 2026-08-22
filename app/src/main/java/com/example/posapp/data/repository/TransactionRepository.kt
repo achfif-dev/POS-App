@@ -26,6 +26,12 @@ class TransactionRepository @Inject constructor(
     suspend fun getTopSellingItems(start: Long, end: Long, limit: Int = 10): List<TopSellingItem> =
         transactionDao.getTopSellingItems(start, end, limit)
 
+    suspend fun getTransactionWithItems(id: Long): Pair<TransactionEntity, List<TransactionItemEntity>>? {
+        val transaction = transactionDao.getById(id) ?: return null
+        val items = transactionDao.getItems(id)
+        return transaction to items
+    }
+
     /**
      * Menyimpan transaksi + item-nya secara atomik, lalu mengurangi stok tiap produk.
      * Dipanggil oleh CheckoutUseCase agar 1 checkout = 1 operasi konsisten.

@@ -21,6 +21,9 @@ data class TopSellingItem(
 @Dao
 interface TransactionDao {
 
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    suspend fun getById(id: Long): TransactionEntity?
+
     @Insert
     suspend fun insertTransaction(transaction: TransactionEntity): Long
 

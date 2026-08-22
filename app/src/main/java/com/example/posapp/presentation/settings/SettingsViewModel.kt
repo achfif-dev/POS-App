@@ -1,0 +1,81 @@
+package com.example.posapp.presentation.settings
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.backup.BackupRepository
+import com.example.posapp.data.backup.BackupResult
+import com.example.posapp.data.export.ExcelExporter
+import com.example.posapp.data.repository.ProductRepository
+import com.example.posapp.data.repository.TransactionRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import javax.inject.Inject
+
+sealed class SettingsEvent {
+    data class ExportReady(val file: File, val mimeType: String) : SettingsEvent()
+    data class ShowMessage(val message: String) : SettingsEvent()
+}
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val backupRepository: BackupRepository,
+    private val excelExporter: ExcelExporter,
+    private val productRepository: ProductRepository,
+    private val transactionRepository: TransactionRepository
+) : ViewModel() {
+
+    private val _events = MutableSharedFlow<SettingsEvent>()
+    val events: SharedFlow<SettingsEvent> = _events
+
+    fun backupNow() {
+        viewModelScope.launch {
+            when (val result = withContext(Dispatchers.IO) { backupRepository.backup() }) {
+                is BackupResult.Success -> _events.emit(SettingsEvent.ExportReady(result.file, "application/octet-stream"))
+                is BackupResult.Error -> _events.emit(SettingsEvent.ShowMessage(result.message))
+            }
+        }
+    }
+
+    fun restoreFrom(file: File) {
+        viewModelScope.launch {
+            when (val result = withContext(Dispatchers.IO) { backupRepository.restore(file) }) {
+                is BackupResult.Success -> _events.emit(
+                    SettingsEvent.ShowMessage("Restore berhasil. Silakan tutup dan buka ulang aplikasi.")
+                )
+                is BackupResult.Error -> _events.emit(SettingsEvent.ShowMessage(result.message))
+            }
+        }
+    }
+
+    fun listLocalBackups(): List<File> = backupRepository.listLocalBackups()
+
+    fun exportProductsExcel() {
+        viewModelScope.launch {
+            val products = productRepository.getAllForExport()
+            val file = withContext(Dispatchers.IO) { excelExporter.exportProducts(products) }
+            _events.emit(SettingsEvent.ExportReady(file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        }
+    }
+
+    fun exportTransactionsExcel() {
+        viewModelScope.launch {
+            val transactions = transactionRepository.observeAll().first()
+            val file = withContext(Dispatchers.IO) { excelExporter.exportTransactions(transactions) }
+            _events.emit(SettingsEvent.ExportReady(file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        }
+    }
+
+    fun exportProductsCsv() {
+        viewModelScope.launch {
+            val products = productRepository.getAllForExport()
+            val file = withContext(Dispatchers.IO) { excelExporter.exportProductsCsv(products) }
+            _events.emit(SettingsEvent.ExportReady(file, "text/csv"))
+        }
+    }
+}

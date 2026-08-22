@@ -1,5 +1,6 @@
 package com.example.posapp.presentation.pos
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -9,17 +10,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.TransactionEntity
+import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.domain.model.Cart
 import java.text.NumberFormat
 import java.util.Locale
@@ -31,11 +38,41 @@ private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in",
 fun PosScreen(
     viewModel: PosViewModel = hiltViewModel(),
     onOpenScanner: () -> Unit = {},
-    onOpenProducts: () -> Unit = {}
+    onOpenProducts: () -> Unit = {},
+    onOpenReports: () -> Unit = {},
+    onOpenStock: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    scannedSku: String? = null,
+    onScannedSkuConsumed: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val lastReceipt by viewModel.lastReceipt.collectAsState()
     var showPaymentSheet by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) viewModel.printReceipt() }
+
+    fun requestPrint() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.BLUETOOTH_CONNECT
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted) viewModel.printReceipt() else bluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            viewModel.printReceipt()
+        }
+    }
+
+    LaunchedEffect(scannedSku) {
+        if (scannedSku != null) {
+            viewModel.addToCartBySku(scannedSku)
+            onScannedSkuConsumed()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -45,6 +82,11 @@ fun PosScreen(
                     showPaymentSheet = false
                     snackbarHostState.showSnackbar(
                         "Transaksi ${event.invoiceNumber} berhasil. Kembalian: ${rupiah.format(event.change)}"
+                    )
+                }
+                is PosEvent.PdfReady -> {
+                    context.startActivity(
+                        Intent.createChooser(viewModel.createShareIntent(event.file), "Bagikan Invoice PDF")
                     )
                 }
             }
@@ -58,6 +100,14 @@ fun PosScreen(
                 title = { Text("Kasir") },
                 actions = {
                     TextButton(onClick = onOpenProducts) { Text("Produk") }
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu lainnya")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Stok & Inventaris") }, onClick = { showMenu = false; onOpenStock() })
+                        DropdownMenuItem(text = { Text("Laporan Penjualan") }, onClick = { showMenu = false; onOpenReports() })
+                        DropdownMenuItem(text = { Text("Pengaturan") }, onClick = { showMenu = false; onOpenSettings() })
+                    }
                 }
             )
         }
@@ -137,6 +187,57 @@ fun PosScreen(
             onConfirm = { method, amountPaid -> viewModel.checkout(method, amountPaid) }
         )
     }
+
+    lastReceipt?.let { (transaction, items) ->
+        ReceiptDialog(
+            transaction = transaction,
+            items = items,
+            onDismiss = { viewModel.dismissReceipt() },
+            onPrint = { requestPrint() },
+            onExportPdf = { viewModel.exportReceiptPdf() }
+        )
+    }
+}
+
+@Composable
+private fun ReceiptDialog(
+    transaction: TransactionEntity,
+    items: List<TransactionItemEntity>,
+    onDismiss: () -> Unit,
+    onPrint: () -> Unit,
+    onExportPdf: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transaksi Berhasil") },
+        text = {
+            Column {
+                Text("No. Invoice: ${transaction.invoiceNumber}")
+                Spacer(Modifier.height(4.dp))
+                Text("Total: ${rupiah.format(transaction.total)}")
+                Text("Kembalian: ${rupiah.format(transaction.changeAmount)}")
+                Spacer(Modifier.height(8.dp))
+                Text("${items.size} item terjual", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onPrint) {
+                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Cetak Struk")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onExportPdf) {
+                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("PDF")
+                }
+                TextButton(onClick = onDismiss) { Text("Tutup") }
+            }
+        }
+    )
 }
 
 @Composable
