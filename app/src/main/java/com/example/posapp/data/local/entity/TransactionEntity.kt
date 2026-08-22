@@ -1,0 +1,77 @@
+package com.example.posapp.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS }
+
+@Entity(tableName = "transactions")
+data class TransactionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val invoiceNumber: String,      // mis. INV-20260822-0001
+    val subtotal: Double,
+    val taxPercent: Double,         // PPN %
+    val taxAmount: Double,
+    val discountAmount: Double,     // diskon transaksi (nominal)
+    val total: Double,
+    val paymentMethod: PaymentMethod,
+    val amountPaid: Double,
+    val changeAmount: Double,
+    val note: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "transaction_items",
+    foreignKeys = [
+        ForeignKey(
+            entity = TransactionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["transactionId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = ProductEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["productId"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [Index("transactionId"), Index("productId")]
+)
+data class TransactionItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val transactionId: Long,
+    val productId: Long,
+    val productNameSnapshot: String, // simpan snapshot nama & harga saat transaksi
+    val priceSnapshot: Double,
+    val quantity: Int,
+    val itemDiscount: Double = 0.0,
+    val itemNote: String? = null
+) {
+    val lineTotal: Double
+        get() = (priceSnapshot * quantity) - itemDiscount
+}
+
+@Entity(
+    tableName = "stock_adjustments",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProductEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["productId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("productId")]
+)
+data class StockAdjustmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val productId: Long,
+    val type: String,        // "IN", "OUT", "OPNAME"
+    val quantity: Int,       // selalu positif; arah ditentukan oleh 'type'
+    val reason: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
