@@ -4,8 +4,8 @@ import android.content.Context
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
-import org.apache.poi.ss.usermodel.CellStyle
 import org.apache.poi.ss.usermodel.IndexedColors
+import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -91,7 +91,7 @@ class ExcelExporter @Inject constructor(
         return file
     }
 
-    private fun headerStyle(workbook: XSSFWorkbook): CellStyle {
+    private fun headerStyle(workbook: XSSFWorkbook): XSSFCellStyle {
         val font = workbook.createFont().apply { bold = true }
         return workbook.createCellStyle().apply {
             setFont(font)
