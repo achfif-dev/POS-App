@@ -30,7 +30,8 @@ private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in",
 @Composable
 fun PosScreen(
     viewModel: PosViewModel = hiltViewModel(),
-    onOpenScanner: () -> Unit = {}
+    onOpenScanner: () -> Unit = {},
+    onOpenProducts: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showPaymentSheet by remember { mutableStateOf(false) }
@@ -53,7 +54,12 @@ fun PosScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(title = { Text("Kasir") })
+            TopAppBar(
+                title = { Text("Kasir") },
+                actions = {
+                    TextButton(onClick = onOpenProducts) { Text("Produk") }
+                }
+            )
         }
     ) { padding ->
         Row(modifier = Modifier.padding(padding).fillMaxSize()) {

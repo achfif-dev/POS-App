@@ -15,6 +15,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.posapp.presentation.pos.PosScreen
+import com.example.posapp.presentation.product.ProductScreen
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -36,8 +37,8 @@ class MainActivity : ComponentActivity() {
 fun PosNavHost() {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "pos") {
-        composable("pos") { PosScreen() }
-        // composable("products") { ProductListScreen() }
+        composable("pos") { PosScreen(onOpenProducts = { navController.navigate("products") }) }
+        composable("products") { ProductScreen(onBack = { navController.popBackStack() }) }
         // composable("reports") { ReportScreen() }
         // composable("scanner") { BarcodeScannerScreen() }
     }
