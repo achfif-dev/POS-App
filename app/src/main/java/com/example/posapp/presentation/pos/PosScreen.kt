@@ -84,7 +84,7 @@ fun PosScreen(
                 }
             }
 
-            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+            VerticalDivider(modifier = Modifier.fillMaxHeight())
 
             // --- Panel Kanan: Keranjang ---
             Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(8.dp)) {
@@ -173,11 +173,11 @@ private fun CartLineRow(
 @Composable
 private fun CartSummary(cart: Cart) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Divider()
+        HorizontalDivider()
         SummaryRow("Subtotal", rupiah.format(cart.subtotal))
         SummaryRow("Diskon", "- " + rupiah.format(cart.transactionDiscount))
         SummaryRow("Pajak (${cart.taxPercent}%)", rupiah.format(cart.taxAmount))
-        Divider()
+        HorizontalDivider()
         SummaryRow("Total", rupiah.format(cart.total), emphasize = true)
     }
 }

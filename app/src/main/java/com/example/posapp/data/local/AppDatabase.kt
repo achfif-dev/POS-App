@@ -32,7 +32,7 @@ class Converters {
         StockAdjustmentEntity::class
     ],
     version = 1,
-    exportSchema = true
+    exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {

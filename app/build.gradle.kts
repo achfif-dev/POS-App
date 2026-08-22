@@ -12,7 +12,8 @@ android {
 
     defaultConfig {
         applicationId = "com.example.posapp"
-        minSdk = 26
+        minSdk = 26 // Apache POI (export Excel) memakai java.lang.invoke.MethodHandle,
+                    // yang baru didukung D8/Android mulai API 26 (Android 8.0)
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
