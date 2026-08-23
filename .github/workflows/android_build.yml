@@ -82,20 +82,35 @@ jobs:
             echo "TRIMMED_KEY_ALIAS=$TRIMMED_KEY_ALIAS"
             echo "TRIMMED_KEY_PASS=$TRIMMED_KEY_PASS"
           } >> "$GITHUB_ENV"
-          if ! keytool -list -v \
-              -keystore "${{ runner.temp }}/release.keystore" \
-              -alias "$TRIMMED_KEY_ALIAS" \
-              -storepass "$TRIMMED_STORE_PASS" \
-              -keypass "$TRIMMED_KEY_PASS" > /dev/null 2>&1; then
-            echo "::error::Gagal membuka release.keystore dengan secrets yang ada di repo ini."
-            echo "::error::Kemungkinan besar RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD,"
-            echo "::error::RELEASE_KEY_ALIAS, dan RELEASE_KEY_PASSWORD di GitHub Secrets tidak"
-            echo "::error::berasal dari keystore yang SAMA (misalnya workflow"
-            echo "::error::'Generate Release Keystore' pernah dijalankan lebih dari sekali, atau"
-            echo "::error::ada spasi/baris baru tidak sengaja ikut ter-copy)."
-            echo "::error::Perbaikan: jalankan ulang workflow 'Generate Release Keystore' SATU"
-            echo "::error::KALI, lalu update KEEMPAT secrets sekaligus dari file keystore-info.txt"
-            echo "::error::yang dihasilkan (jangan update sebagian saja)."
+
+          KEYSTORE="${{ runner.temp }}/release.keystore"
+
+          # 1) Cek RELEASE_KEYSTORE_PASSWORD (storepass) dengan membuka keystore.
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$TRIMMED_STORE_PASS" > /dev/null 2>&1; then
+            echo "::error::RELEASE_KEYSTORE_PASSWORD tidak cocok dengan release.keystore (gagal membuka keystore)."
+            echo "::error::Perbaikan: update ulang secret RELEASE_KEYSTORE_PASSWORD, pastikan tidak ada"
+            echo "::error::spasi/enter tersembunyi ikut ter-copy dari keystore-info.txt."
+            exit 1
+          fi
+
+          # 2) Cek RELEASE_KEY_ALIAS ada di dalam keystore.
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$TRIMMED_STORE_PASS" -alias "$TRIMMED_KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::RELEASE_KEY_ALIAS ('$TRIMMED_KEY_ALIAS') tidak ditemukan di dalam release.keystore."
+            echo "::error::Perbaikan: cek ulang nilai RELEASE_KEY_ALIAS di keystore-info.txt (biasanya 'posapp')."
+            exit 1
+          fi
+
+          # 3) Cek RELEASE_KEY_PASSWORD dengan benar-benar membuka private key-nya.
+          #    'keytool -list' saja TIDAK cukup untuk memvalidasi keypass (bisa lolos
+          #    walau keypass salah). 'keytool -keypasswd' memaksa keytool mendekripsi
+          #    private key memakai keypass yang diberikan, baru menimpanya dengan nilai
+          #    yang sama -- ini aman karena hanya mengubah file temp sekali-pakai di
+          #    runner, bukan keystore asli/secret di GitHub.
+          if ! keytool -keypasswd -keystore "$KEYSTORE" -storepass "$TRIMMED_STORE_PASS" \
+              -alias "$TRIMMED_KEY_ALIAS" -keypass "$TRIMMED_KEY_PASS" -new "$TRIMMED_KEY_PASS" > /dev/null 2>&1; then
+            echo "::error::RELEASE_KEY_PASSWORD tidak cocok dengan private key alias '$TRIMMED_KEY_ALIAS'."
+            echo "::error::Perbaikan: update ulang secret RELEASE_KEY_PASSWORD, pastikan tidak ada"
+            echo "::error::spasi/enter tersembunyi ikut ter-copy dari keystore-info.txt."
             exit 1
           fi
           echo "Keystore & password valid, lanjut build release."
