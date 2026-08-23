@@ -7,6 +7,7 @@ import com.example.posapp.data.local.dao.TopSellingItem
 import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.repository.TransactionRepository
+import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,7 @@ import javax.inject.Inject
 data class DashboardUiState(
     val cashierName: String? = null,
     val storeName: String = "Toko Saya",
+    val storeLogoPath: String? = null,
     val todayRevenue: Double = 0.0,
     val todayTransactions: Int = 0,
     val todayGrossProfit: Double = 0.0,
@@ -37,27 +39,31 @@ data class DayRevenue(val label: String, val date: java.util.Date, val revenue: 
 class DashboardViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val productRepository: ProductRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val storeProfileRepository: StoreProfileRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        // Muat ringkasan awal, lalu berlangganan perubahan transaksi/stok/sesi secara reaktif
-        // (Room Flow) agar Dashboard langsung update setelah checkout tanpa perlu menutup-buka
-        // ulang aplikasi — sebelumnya ringkasan hanya dihitung sekali saat ViewModel dibuat.
+        // Muat ringkasan awal, lalu berlangganan perubahan transaksi/stok/sesi/profil toko
+        // secara reaktif (Room Flow + DataStore Flow) agar Dashboard langsung update setelah
+        // checkout atau ganti nama/logo toko tanpa perlu menutup-buka ulang aplikasi.
         viewModelScope.launch {
             combine(
                 sessionManager.currentUser,
                 productRepository.observeLowStock(),
-                transactionRepository.observeAll()
-            ) { user, lowStock, _ -> user to lowStock }
-                .collect { (user, lowStock) ->
+                transactionRepository.observeAll(),
+                storeProfileRepository.profile
+            ) { user, lowStock, _, storeProfile -> Triple(user, lowStock, storeProfile) }
+                .collect { (user, lowStock, storeProfile) ->
                     _uiState.value = _uiState.value.copy(
                         cashierName = user?.name,
                         isAdmin = user == null || user.role == UserRole.ADMIN,
-                        lowStockCount = lowStock.size
+                        lowStockCount = lowStock.size,
+                        storeName = storeProfile.name,
+                        storeLogoPath = storeProfile.logoImagePath
                     )
                     loadSummary()
                 }

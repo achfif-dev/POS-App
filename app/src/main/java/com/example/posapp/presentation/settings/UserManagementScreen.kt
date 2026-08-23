@@ -50,7 +50,11 @@ fun UserManagementScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            // navigationBarsPadding() mencegah FAB terpotong system nav bar di mode lanskap.
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier.navigationBarsPadding()
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Tambah Pengguna")
             }
         }

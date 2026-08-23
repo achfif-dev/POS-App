@@ -1,5 +1,7 @@
 package com.example.posapp.presentation.product
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -14,9 +16,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
@@ -31,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.posapp.data.local.entity.CategoryEntity
@@ -86,7 +92,13 @@ fun ProductScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { formState = ProductFormState() }) {
+            // navigationBarsPadding() wajib di sini — tanpa ini FAB bisa tertutup/terpotong
+            // oleh system navigation bar saat perangkat dalam mode lanskap (nav bar geser ke
+            // tepi kanan/kiri layar karena enableEdgeToEdge() di MainActivity).
+            FloatingActionButton(
+                onClick = { formState = ProductFormState() },
+                modifier = Modifier.navigationBarsPadding()
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Tambah Produk")
             }
         }
@@ -262,17 +274,51 @@ private fun ProductFormDialog(
     var state by remember(form.productId) { mutableStateOf(form) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
+    var showPhotoSourceSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    // File tujuan sementara untuk hasil jepretan kamera — dibuat sebelum kamera dibuka,
+    // lalu Uri-nya (via FileProvider) diberikan ke aplikasi Kamera untuk ditulisi langsung.
+    var pendingCameraFile by remember { mutableStateOf<File?>(null) }
+
+    fun newPhotoDestination(): File {
+        val photoDir = File(context.filesDir, "product_photos").apply { mkdirs() }
+        return File(photoDir, "product_${System.currentTimeMillis()}.jpg")
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val photoDir = File(context.filesDir, "product_photos").apply { mkdirs() }
-            val destFile = File(photoDir, "product_${System.currentTimeMillis()}.jpg")
+            val destFile = newPhotoDestination()
             context.contentResolver.openInputStream(uri)?.use { input ->
                 destFile.outputStream().use { output -> input.copyTo(output) }
             }
             state = state.copy(photoPath = destFile.absolutePath)
         }
+    }
+
+    val cameraCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = pendingCameraFile
+        if (success && file != null) {
+            state = state.copy(photoPath = file.absolutePath)
+        }
+        pendingCameraFile = null
+    }
+
+    fun launchCamera() {
+        val destFile = newPhotoDestination()
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
+        pendingCameraFile = destFile
+        cameraCaptureLauncher.launch(uri)
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) launchCamera() }
+
+    fun requestCameraCapture() {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        if (hasPermission) launchCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -318,7 +364,7 @@ private fun ProductFormDialog(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    TextButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+                    TextButton(onClick = { showPhotoSourceSheet = true }) {
                         Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(if (state.photoPath != null) "Ganti Foto" else "Tambah Foto")
@@ -491,6 +537,81 @@ private fun ProductFormDialog(
                 },
                 onBack = { showScanner = false }
             )
+        }
+    }
+
+    if (showPhotoSourceSheet) {
+        Dialog(onDismissRequest = { showPhotoSourceSheet = false }) {
+            Surface(shape = MaterialTheme.shapes.large) {
+                Column(Modifier.padding(20.dp).fillMaxWidth()) {
+                    Text("Foto Produk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Ambil foto langsung dari kamera atau pilih dari galeri",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    PhotoSourceOption(
+                        icon = Icons.Default.CameraAlt,
+                        label = "Ambil Foto",
+                        description = "Buka kamera untuk memotret produk",
+                        onClick = {
+                            showPhotoSourceSheet = false
+                            requestCameraCapture()
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    PhotoSourceOption(
+                        icon = Icons.Default.PhotoLibrary,
+                        label = "Pilih dari Galeri",
+                        description = "Gunakan foto yang sudah ada",
+                        onClick = {
+                            showPhotoSourceSheet = false
+                            photoPickerLauncher.launch("image/*")
+                        }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { showPhotoSourceSheet = false }) { Text("Batal") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoSourceOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(label, fontWeight = FontWeight.SemiBold)
+                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

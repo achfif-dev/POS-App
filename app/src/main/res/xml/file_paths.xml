@@ -5,4 +5,8 @@
          "Failed to find configured root" tidak muncul lagi kalau ada folder baru ditambahkan. -->
     <external-files-path name="root" path="." />
     <cache-path name="cache" path="." />
+    <!-- Menyediakan URI content:// untuk aplikasi Kamera menulis foto produk langsung ke
+         penyimpanan internal aplikasi (getFilesDir()/product_photos), lokasi yang sama dipakai
+         alur pilih-dari-galeri supaya semua foto produk konsisten di satu tempat. -->
+    <files-path name="product_photos" path="product_photos/" />
 </paths>
