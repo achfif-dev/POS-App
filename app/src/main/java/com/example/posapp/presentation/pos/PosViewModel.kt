@@ -11,8 +11,10 @@ import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.UserRole
+import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
+import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfile
@@ -42,6 +44,9 @@ import javax.inject.Inject
 
 data class PosUiState(
     val products: List<ProductEntity> = emptyList(),
+    // Peta categoryId -> nama kategori, dipakai untuk memilih ikon produk yang sesuai
+    // kategori saat produk belum punya foto (lihat iconForCategory di PosScreen).
+    val categoryNamesById: Map<Long, String> = emptyMap(),
     val searchQuery: String = "",
     val selectedCategoryId: Long? = null,
     val cart: Cart = Cart(),
@@ -56,6 +61,7 @@ data class PosUiState(
 class PosViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val checkoutUseCase: CheckoutUseCase,
+    private val categoryRepository: CategoryRepository,
     private val transactionRepository: TransactionRepository,
     private val printerRepository: PrinterRepository,
     private val pdfInvoiceGenerator: PdfInvoiceGenerator,
@@ -78,6 +84,7 @@ class PosViewModel @Inject constructor(
 
     val uiState: StateFlow<PosUiState> = combine(
         productsFlow,
+        categoryRepository.observeAll(),
         _searchQuery,
         _selectedCategoryId,
         _cart,
@@ -87,14 +94,17 @@ class PosViewModel @Inject constructor(
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val products = values[0] as List<ProductEntity>
-        val query = values[1] as String
-        val categoryId = values[2] as Long?
-        val cart = values[3] as Cart
-        val processing = values[4] as Boolean
-        val profile = values[5] as StoreProfile
-        val user = values[6] as com.example.posapp.data.local.entity.UserEntity?
+        @Suppress("UNCHECKED_CAST")
+        val categories = values[1] as List<CategoryEntity>
+        val query = values[2] as String
+        val categoryId = values[3] as Long?
+        val cart = values[4] as Cart
+        val processing = values[5] as Boolean
+        val profile = values[6] as StoreProfile
+        val user = values[7] as com.example.posapp.data.local.entity.UserEntity?
         PosUiState(
             products = products,
+            categoryNamesById = categories.associate { it.id to it.name },
             searchQuery = query,
             selectedCategoryId = categoryId,
             cart = cart,

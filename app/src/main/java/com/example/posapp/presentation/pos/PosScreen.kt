@@ -13,8 +13,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Chair
+import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
@@ -23,6 +32,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Toys
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
@@ -198,13 +208,17 @@ fun PosScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 140.dp),
+                    // Diperlebar dari 140dp: kartu produk sekarang menaruh foto/ikon di
+                    // samping (bukan di atas) nama & harga, jadi butuh ruang horizontal
+                    // lebih agar teksnya tidak sempit/terpotong.
+                    columns = GridCells.Adaptive(minSize = 180.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.products, key = { it.id }) { product ->
                         ProductCard(
                             product = product,
+                            categoryName = product.categoryId?.let { uiState.categoryNamesById[it] },
                             onClick = {
                                 if (product.hasVariants) {
                                     variantPickerProduct = product
@@ -401,57 +415,95 @@ private val productAccentPalette = listOf(
 private fun accentColorFor(name: String): Color =
     productAccentPalette[(name.hashCode().let { if (it < 0) -it else it }) % productAccentPalette.size]
 
+// Ikon default per kategori produk, dipakai saat produk belum punya foto sendiri.
+// Dicocokkan dari nama kategori (case-insensitive, berbasis kata kunci) supaya tetap
+// bekerja untuk kategori custom buatan toko, bukan daftar tetap yang kaku.
+private fun iconForCategory(categoryName: String?): androidx.compose.ui.graphics.vector.ImageVector {
+    val n = categoryName?.lowercase().orEmpty()
+    return when {
+        n.isBlank() -> Icons.Default.Inventory2
+        listOf("baju", "pakaian", "fashion", "apparel", "kaos", "kemeja", "hem", "celana", "jaket").any { n.contains(it) } ->
+            Icons.Default.Checkroom
+        listOf("makanan", "food", "snack", "kue", "roti", "cake", "kuliner").any { n.contains(it) } ->
+            Icons.Default.Fastfood
+        listOf("minuman", "drink", "kopi", "teh", "jus", "beverage").any { n.contains(it) } ->
+            Icons.Default.LocalCafe
+        listOf("elektronik", "gadget", "hp", "komputer", "electronic").any { n.contains(it) } ->
+            Icons.Default.Devices
+        listOf("kosmetik", "kecantikan", "skincare", "beauty").any { n.contains(it) } ->
+            Icons.Default.Face
+        listOf("obat", "kesehatan", "farmasi", "apotek", "health").any { n.contains(it) } ->
+            Icons.Default.MedicalServices
+        listOf("mainan", "toys", "toy").any { n.contains(it) } ->
+            Icons.Default.Toys
+        listOf("rumah tangga", "peralatan rumah", "household", "perabot").any { n.contains(it) } ->
+            Icons.Default.Chair
+        listOf("atk", "alat tulis", "kantor", "buku", "stationery").any { n.contains(it) } ->
+            Icons.Default.Edit
+        else -> Icons.Default.Category
+    }
+}
+
 @Composable
-private fun ProductCard(product: ProductEntity, onClick: () -> Unit) {
+private fun ProductCard(product: ProductEntity, categoryName: String? = null, onClick: () -> Unit) {
     val accent = accentColorFor(product.name)
     val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
 
+    // Foto/ikon produk diletakkan di SAMPING (kiri) nama & harga dalam satu Row,
+    // bukan ditumpuk di atas teks — supaya kartu lebih ringkas seperti daftar produk
+    // pada umumnya dan foto langsung terlihat berdampingan dengan detail produknya.
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(accent.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (product.photoPath != null) {
-                        AsyncImage(
-                            model = product.photoPath,
-                            contentDescription = product.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.Inventory2,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                if (isLowStock) {
-                    Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (product.photoPath != null) {
+                    AsyncImage(
+                        model = product.photoPath,
+                        contentDescription = product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    // Tanpa foto: pakai ikon sesuai kategori produk, bukan ikon kotak generik.
                     Icon(
-                        Icons.Default.WarningAmber,
-                        contentDescription = "Stok tipis",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
+                        iconForCategory(categoryName),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
-            Spacer(Modifier.height(4.dp))
-            Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, color = accent, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            if (product.hasVariants) {
-                Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            } else {
-                val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.weight(1f))
+                    if (isLowStock) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.WarningAmber,
+                            contentDescription = "Stok tipis",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, color = accent, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(2.dp))
+                if (product.hasVariants) {
+                    Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+                }
             }
         }
     }
