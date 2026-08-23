@@ -100,17 +100,27 @@ jobs:
             exit 1
           fi
 
-          # 3) Cek RELEASE_KEY_PASSWORD dengan benar-benar membuka private key-nya.
-          #    'keytool -list' saja TIDAK cukup untuk memvalidasi keypass (bisa lolos
-          #    walau keypass salah). 'keytool -keypasswd' memaksa keytool mendekripsi
-          #    private key memakai keypass yang diberikan, baru menimpanya dengan nilai
-          #    yang sama -- ini aman karena hanya mengubah file temp sekali-pakai di
-          #    runner, bukan keystore asli/secret di GitHub.
-          if ! keytool -keypasswd -keystore "$KEYSTORE" -storepass "$TRIMMED_STORE_PASS" \
-              -alias "$TRIMMED_KEY_ALIAS" -keypass "$TRIMMED_KEY_PASS" -new "$TRIMMED_KEY_PASS" > /dev/null 2>&1; then
-            echo "::error::RELEASE_KEY_PASSWORD tidak cocok dengan private key alias '$TRIMMED_KEY_ALIAS'."
-            echo "::error::Perbaikan: update ulang secret RELEASE_KEY_PASSWORD, pastikan tidak ada"
-            echo "::error::spasi/enter tersembunyi ikut ter-copy dari keystore-info.txt."
+          # 3) Cek RELEASE_KEY_PASSWORD.
+          #    PENTING: keytool modern membuat keystore format PKCS12 secara default,
+          #    dan PKCS12 TIDAK punya password terpisah untuk private key -- hanya ada
+          #    SATU password sungguhan (password keystore). Karena itu 'keytool
+          #    -keypasswd' TIDAK didukung sama sekali untuk PKCS12 (akan selalu gagal
+          #    walau password benar, ini bug di versi workflow sebelumnya). Validasi
+          #    yang benar: pastikan RELEASE_KEY_PASSWORD == RELEASE_KEYSTORE_PASSWORD,
+          #    dan pastikan storepass benar-benar bisa mendekripsi private key bag-nya
+          #    lewat openssl (memverifikasi MAC keseluruhan file).
+          if [ "$TRIMMED_KEY_PASS" != "$TRIMMED_STORE_PASS" ]; then
+            echo "::error::RELEASE_KEY_PASSWORD harus SAMA PERSIS dengan RELEASE_KEYSTORE_PASSWORD."
+            echo "::error::Keystore ini format PKCS12, yang tidak punya password key terpisah dari"
+            echo "::error::password keystore. Update secret RELEASE_KEY_PASSWORD supaya nilainya"
+            echo "::error::sama persis dengan RELEASE_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          if ! openssl pkcs12 -in "$KEYSTORE" -info -noout -passin "pass:$TRIMMED_STORE_PASS" > /dev/null 2>&1 && \
+             ! openssl pkcs12 -in "$KEYSTORE" -info -noout -passin "pass:$TRIMMED_STORE_PASS" -legacy > /dev/null 2>&1; then
+            echo "::error::Gagal mendekripsi release.keystore dengan RELEASE_KEYSTORE_PASSWORD (MAC tidak cocok)."
+            echo "::error::File keystore kemungkinan korup, atau RELEASE_KEYSTORE_BASE64 tidak"
+            echo "::error::berasal dari keystore yang sama dengan password ini."
             exit 1
           fi
           echo "Keystore & password valid, lanjut build release."
