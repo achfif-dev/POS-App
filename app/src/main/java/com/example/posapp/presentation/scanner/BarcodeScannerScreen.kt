@@ -3,6 +3,7 @@ package com.example.posapp.presentation.scanner
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -29,7 +30,7 @@ import java.util.concurrent.Executors
  * Memanggil [onBarcodeDetected] sekali saat barcode pertama berhasil dibaca, lalu berhenti
  * memproses frame berikutnya untuk mencegah callback berulang pada barcode yang sama.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalGetImage::class)
 @Composable
 fun BarcodeScannerScreen(
     onBarcodeDetected: (String) -> Unit,
