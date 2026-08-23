@@ -89,6 +89,24 @@ class StoreProfileViewModel @Inject constructor(
         }
     }
 
+    /** Ganti font tampilan aplikasi (lihat PosFontOption di presentation/theme/Font.kt). */
+    fun setFontChoice(fontKey: String) {
+        viewModelScope.launch {
+            storeProfileRepository.updateFontChoice(fontKey)
+            _events.emit(StoreProfileEvent.ShowMessage("Font aplikasi diperbarui"))
+        }
+    }
+
+    /** Ganti bahasa yang dipakai di struk cetak & PDF invoice ("id" atau "en"). */
+    fun setReceiptLanguage(languageCode: String) {
+        viewModelScope.launch {
+            storeProfileRepository.updateReceiptLanguage(languageCode)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (languageCode == "en") "Bahasa struk diubah ke English" else "Bahasa struk diubah ke Indonesia")
+            )
+        }
+    }
+
     /** Aktifkan/nonaktifkan pajak (PPN) & atur persentasenya. Berlaku untuk transaksi berikutnya. */
     fun setTaxSettings(enabled: Boolean, percent: Double) {
         viewModelScope.launch {

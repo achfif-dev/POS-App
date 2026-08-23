@@ -139,6 +139,7 @@ fun ProductScreen(
                                     purchasePrice = product.purchasePrice.toString(),
                                     sellPrice = product.sellPrice.toString(),
                                     stock = product.stock.toString(),
+                                    unit = product.unit,
                                     lowStockThreshold = product.lowStockThreshold.toString(),
                                     discountPercent = product.discountPercent.toString(),
                                     variantName = product.variantName.orEmpty(),
@@ -236,7 +237,7 @@ private fun ProductRow(
                         Text("Punya varian", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     } else {
                         val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
+                        Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
                     }
                 }
             }
@@ -260,6 +261,10 @@ private fun ProductFormDialog(
 ) {
     var state by remember(form.productId) { mutableStateOf(form) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var unitMenuExpanded by remember { mutableStateOf(false) }
+    var isCustomUnit by remember(form.productId) {
+        mutableStateOf(com.example.posapp.data.local.entity.ProductUnits.isCustom(form.unit))
+    }
     var showScanner by remember { mutableStateOf(false) }
     var showPhotoSourceSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -468,6 +473,51 @@ private fun ProductFormDialog(
                             onValueChange = { state = state.copy(lowStockThreshold = it.filter { c -> c.isDigit() }) },
                             label = { Text("Alert Stok Tipis") },
                             modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    ExposedDropdownMenuBox(
+                        expanded = unitMenuExpanded,
+                        onExpandedChange = { unitMenuExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = if (isCustomUnit) "Lainnya" else state.unit,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Satuan") },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = unitMenuExpanded,
+                            onDismissRequest = { unitMenuExpanded = false }
+                        ) {
+                            com.example.posapp.data.local.entity.ProductUnits.PRESETS.forEach { presetUnit ->
+                                DropdownMenuItem(
+                                    text = { Text(presetUnit) },
+                                    onClick = {
+                                        state = state.copy(unit = presetUnit)
+                                        isCustomUnit = false
+                                        unitMenuExpanded = false
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Lainnya (ketik sendiri)") },
+                                onClick = {
+                                    isCustomUnit = true
+                                    unitMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                    if (isCustomUnit) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.unit,
+                            onValueChange = { state = state.copy(unit = it) },
+                            label = { Text("Satuan Kustom (mis. galon, roll, rim)") },
+                            modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
                     }

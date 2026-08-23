@@ -242,6 +242,7 @@ fun PosScreen(
                                 name = line.product.name + (line.variant?.let { " (${it.variantLabel})" } ?: ""),
                                 price = line.unitPrice,
                                 quantity = line.quantity,
+                                unit = line.product.unit,
                                 onIncrease = { viewModel.updateQuantity(line.lineKey, line.quantity + 1) },
                                 onDecrease = { viewModel.updateQuantity(line.lineKey, line.quantity - 1) }
                             )
@@ -435,7 +436,7 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
                     Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 } else {
                     val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+                    Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodySmall, color = stockColor)
                 }
             }
         }
@@ -447,6 +448,7 @@ private fun CartLineRow(
     name: String,
     price: Double,
     quantity: Int,
+    unit: String = "pcs",
     onIncrease: () -> Unit,
     onDecrease: () -> Unit
 ) {
@@ -459,7 +461,7 @@ private fun CartLineRow(
             Text(rupiah.format(price), style = MaterialTheme.typography.bodySmall)
         }
         IconButton(onClick = onDecrease) { Icon(Icons.Default.Remove, contentDescription = "Kurangi") }
-        Text("$quantity")
+        Text("$quantity $unit")
         IconButton(onClick = onIncrease) { Icon(Icons.Default.Add, contentDescription = "Tambah") }
     }
 }

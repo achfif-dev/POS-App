@@ -76,6 +76,7 @@ class CheckoutUseCase @Inject constructor(
                 productNameSnapshot = line.product.name + (line.variant?.let { " (${it.variantLabel})" } ?: ""),
                 priceSnapshot = line.unitPrice,
                 quantity = line.quantity,
+                unitSnapshot = line.product.unit,
                 itemDiscount = line.discount,
                 itemNote = line.note
             )

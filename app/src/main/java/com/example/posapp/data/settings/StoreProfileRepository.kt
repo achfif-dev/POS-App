@@ -25,6 +25,8 @@ data class StoreProfile(
     val pinLoginEnabled: Boolean = false,
     val logoImagePath: String? = null, // logo toko — dipakai di header struk cetak & PDF invoice
     val appColorHex: String? = null, // warna aksen aplikasi custom (mis. "#E8590C"); null = pakai warna default
+    val fontChoice: String = "plus_jakarta_sans", // lihat PosFontOption di presentation/theme/Font.kt
+    val receiptLanguage: String = "id", // bahasa struk & invoice PDF: "id" (Indonesia) atau "en" (English)
     val taxEnabled: Boolean = true, // matikan untuk toko yang tidak memungut pajak/PPN
     val taxPercent: Double = 11.0 // persentase pajak/PPN yang dipakai saat taxEnabled = true
 )
@@ -43,6 +45,8 @@ class StoreProfileRepository @Inject constructor(
         val PIN_LOGIN_ENABLED = booleanPreferencesKey("pin_login_enabled")
         val LOGO_PATH = stringPreferencesKey("store_logo_path")
         val APP_COLOR_HEX = stringPreferencesKey("app_color_hex")
+        val FONT_CHOICE = stringPreferencesKey("font_choice")
+        val RECEIPT_LANGUAGE = stringPreferencesKey("receipt_language")
         val TAX_ENABLED = booleanPreferencesKey("tax_enabled")
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
     }
@@ -58,6 +62,8 @@ class StoreProfileRepository @Inject constructor(
             pinLoginEnabled = prefs[Keys.PIN_LOGIN_ENABLED] ?: false,
             logoImagePath = prefs[Keys.LOGO_PATH],
             appColorHex = prefs[Keys.APP_COLOR_HEX],
+            fontChoice = prefs[Keys.FONT_CHOICE] ?: "plus_jakarta_sans",
+            receiptLanguage = prefs[Keys.RECEIPT_LANGUAGE] ?: "id",
             taxEnabled = prefs[Keys.TAX_ENABLED] ?: true,
             taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0
         )
@@ -104,6 +110,16 @@ class StoreProfileRepository @Inject constructor(
         context.storeProfileDataStore.edit { prefs ->
             if (hex == null) prefs.remove(Keys.APP_COLOR_HEX) else prefs[Keys.APP_COLOR_HEX] = hex
         }
+    }
+
+    /** @param fontKey salah satu key dari PosFontOption.entries (mis. "plus_jakarta_sans", "inter", "poppins"). */
+    suspend fun updateFontChoice(fontKey: String) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.FONT_CHOICE] = fontKey }
+    }
+
+    /** @param languageCode "id" (Indonesia) atau "en" (English) — dipakai di struk cetak & PDF invoice. */
+    suspend fun updateReceiptLanguage(languageCode: String) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.RECEIPT_LANGUAGE] = languageCode }
     }
 
     /** Aktifkan/nonaktifkan pajak & atur persentasenya (mis. PPN 11%, atau 0 untuk toko non-PKP). */

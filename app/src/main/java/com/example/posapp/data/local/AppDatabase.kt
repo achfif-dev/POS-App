@@ -46,7 +46,7 @@ class Converters {
         UserEntity::class,
         TransactionPaymentEntity::class
     ],
-    version = 5, // v5: tambah editedByName & editedAt di transactions (audit koreksi riwayat penjualan oleh Admin)
+    version = 6, // v6: tambah kolom `unit` (satuan produk: pcs/kg/liter/dus/dll) di products & unitSnapshot di transaction_items
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)

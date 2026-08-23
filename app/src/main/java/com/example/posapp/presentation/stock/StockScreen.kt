@@ -103,6 +103,7 @@ fun StockScreen(
         StockAdjustDialog(
             title = "Sesuaikan Stok: ${product.name}",
             currentStock = product.stock,
+            unit = product.unit,
             onDismiss = { adjustingProduct = null },
             onConfirm = { type, qty, reason ->
                 viewModel.adjustStock(product.id, type, qty, reason)
@@ -127,6 +128,7 @@ fun StockScreen(
         StockAdjustDialog(
             title = "Sesuaikan Stok: ${product.name} (${variant.variantLabel})",
             currentStock = variant.stock,
+            unit = product.unit,
             onDismiss = { adjustingVariant = null },
             onConfirm = { type, qty, reason ->
                 viewModel.adjustVariantStock(product.id, variant, type, qty, reason)
@@ -165,7 +167,7 @@ private fun StockProductRow(
                     Text("Stok dikelola per varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     val color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    Text("Stok saat ini: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = color)
+                    Text("Stok saat ini: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodySmall, color = color)
                 }
             }
             TextButton(onClick = onAdjust) { Text("Sesuaikan") }
@@ -225,6 +227,7 @@ private fun VariantPickerForAdjustDialog(
 private fun StockAdjustDialog(
     title: String,
     currentStock: Int,
+    unit: String = "pcs",
     onDismiss: () -> Unit,
     onConfirm: (type: String, quantity: Int, reason: String?) -> Unit
 ) {
@@ -236,7 +239,7 @@ private fun StockAdjustDialog(
         Surface(shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(20.dp).fillMaxWidth()) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                Text("Stok saat ini: $currentStock", style = MaterialTheme.typography.bodySmall)
+                Text("Stok saat ini: $currentStock $unit", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(16.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

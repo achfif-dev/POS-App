@@ -146,7 +146,8 @@ class PosViewModel @Inject constructor(
                     items = receipt.second,
                     storeAddress = profile.address,
                     receiptFooter = profile.receiptFooter,
-                    logoImagePath = profile.logoImagePath
+                    logoImagePath = profile.logoImagePath,
+                    language = profile.receiptLanguage
                 )
             }
             when (result) {
@@ -167,7 +168,8 @@ class PosViewModel @Inject constructor(
                     items = receipt.second,
                     storeAddress = profile.address,
                     receiptFooter = profile.receiptFooter,
-                    logoImagePath = profile.logoImagePath
+                    logoImagePath = profile.logoImagePath,
+                    language = profile.receiptLanguage
                 )
             }
             _events.emit(PosEvent.PdfReady(file))

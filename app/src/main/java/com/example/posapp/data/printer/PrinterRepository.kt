@@ -14,6 +14,7 @@ import com.dantsu.escposprinter.textparser.PrinterTextParserImg
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.export.ReceiptStrings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -65,8 +66,10 @@ class PrinterRepository @Inject constructor(
         items: List<TransactionItemEntity>,
         storeAddress: String = "",
         receiptFooter: String = "Terima kasih!",
-        logoImagePath: String? = null
+        logoImagePath: String? = null,
+        language: String = "id"
     ): PrintResult {
+        val strings = ReceiptStrings.forLanguage(language)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
@@ -108,19 +111,19 @@ class PrinterRepository @Inject constructor(
 
             items.forEach { item ->
                 sb.append("[L]${item.productNameSnapshot}\n")
-                sb.append("[L]${item.quantity} x ${rupiah.format(item.priceSnapshot)}[R]${rupiah.format(item.lineTotal)}\n")
+                sb.append("[L]${item.quantity} ${item.unitSnapshot} x ${rupiah.format(item.priceSnapshot)}[R]${rupiah.format(item.lineTotal)}\n")
             }
 
             sb.append("[C]--------------------------------\n")
-            sb.append("[L]Subtotal[R]${rupiah.format(transaction.subtotal)}\n")
-            sb.append("[L]Diskon[R]-${rupiah.format(transaction.discountAmount)}\n")
+            sb.append("[L]${strings.subtotal}[R]${rupiah.format(transaction.subtotal)}\n")
+            sb.append("[L]${strings.discount}[R]-${rupiah.format(transaction.discountAmount)}\n")
             if (transaction.taxPercent > 0.0) {
-                sb.append("[L]Pajak (${transaction.taxPercent}%)[R]${rupiah.format(transaction.taxAmount)}\n")
+                sb.append("[L]${strings.tax} (${transaction.taxPercent}%)[R]${rupiah.format(transaction.taxAmount)}\n")
             }
-            sb.append("[L]<b>Total</b>[R]<b>${rupiah.format(transaction.total)}</b>\n")
+            sb.append("[L]<b>${strings.total}</b>[R]<b>${rupiah.format(transaction.total)}</b>\n")
             sb.append("[C]--------------------------------\n")
-            sb.append("[L]Bayar (${paymentLabel(transaction.paymentMethod)})[R]${rupiah.format(transaction.amountPaid)}\n")
-            sb.append("[L]Kembali[R]${rupiah.format(transaction.changeAmount)}\n")
+            sb.append("[L]${strings.paid} (${paymentLabel(transaction.paymentMethod, language)})[R]${rupiah.format(transaction.amountPaid)}\n")
+            sb.append("[L]${strings.change}[R]${rupiah.format(transaction.changeAmount)}\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[C]$receiptFooter\n")
             sb.append("[L]\n")
@@ -132,10 +135,10 @@ class PrinterRepository @Inject constructor(
         }
     }
 
-    private fun paymentLabel(method: PaymentMethod): String = when (method) {
+    private fun paymentLabel(method: PaymentMethod, language: String = "id"): String = when (method) {
         PaymentMethod.CASH -> "Cash"
         PaymentMethod.DEBIT_CREDIT -> "Debit/Kredit"
         PaymentMethod.QRIS -> "QRIS"
-        PaymentMethod.MIXED -> "Campuran"
+        PaymentMethod.MIXED -> if (language == "en") "Mixed" else "Campuran"
     }
 }

@@ -38,8 +38,10 @@ class PdfInvoiceGenerator @Inject constructor(
         items: List<TransactionItemEntity>,
         storeAddress: String = "",
         receiptFooter: String = "Terima kasih!",
-        logoImagePath: String? = null
+        logoImagePath: String? = null,
+        language: String = "id"
     ): File {
+        val strings = ReceiptStrings.forLanguage(language)
         val pageWidth = 220
         val lineHeight = 16
         val logoBitmap = logoImagePath?.let { path ->
@@ -98,21 +100,21 @@ class PdfInvoiceGenerator @Inject constructor(
         items.forEach { item ->
             canvas.drawText(item.productNameSnapshot, 8f, y, normalPaint)
             y += 11f
-            canvas.drawText("${item.quantity} x ${rupiah.format(item.priceSnapshot)}", 8f, y, normalPaint)
+            canvas.drawText("${item.quantity} ${item.unitSnapshot} x ${rupiah.format(item.priceSnapshot)}", 8f, y, normalPaint)
             canvas.drawText(rupiah.format(item.lineTotal), pageWidth - 8f, y, rightPaint)
             y += 13f
         }
 
         canvas.drawLine(8f, y, pageWidth - 8f, y, normalPaint)
         y += 14f
-        drawRow(canvas, "Subtotal", rupiah.format(transaction.subtotal), y, normalPaint, rightPaint); y += 12f
-        drawRow(canvas, "Diskon", "-" + rupiah.format(transaction.discountAmount), y, normalPaint, rightPaint); y += 12f
+        drawRow(canvas, strings.subtotal, rupiah.format(transaction.subtotal), y, normalPaint, rightPaint); y += 12f
+        drawRow(canvas, strings.discount, "-" + rupiah.format(transaction.discountAmount), y, normalPaint, rightPaint); y += 12f
         if (transaction.taxPercent > 0.0) {
-            drawRow(canvas, "Pajak (${transaction.taxPercent}%)", rupiah.format(transaction.taxAmount), y, normalPaint, rightPaint); y += 14f
+            drawRow(canvas, "${strings.tax} (${transaction.taxPercent}%)", rupiah.format(transaction.taxAmount), y, normalPaint, rightPaint); y += 14f
         }
-        drawRow(canvas, "Total", rupiah.format(transaction.total), y, boldPaint, rightPaint); y += 16f
-        drawRow(canvas, "Bayar", rupiah.format(transaction.amountPaid), y, normalPaint, rightPaint); y += 12f
-        drawRow(canvas, "Kembali", rupiah.format(transaction.changeAmount), y, normalPaint, rightPaint); y += 20f
+        drawRow(canvas, strings.total, rupiah.format(transaction.total), y, boldPaint, rightPaint); y += 16f
+        drawRow(canvas, strings.paid, rupiah.format(transaction.amountPaid), y, normalPaint, rightPaint); y += 12f
+        drawRow(canvas, strings.change, rupiah.format(transaction.changeAmount), y, normalPaint, rightPaint); y += 20f
 
         canvas.drawText(receiptFooter, pageWidth / 2f, y, titlePaint.apply { textSize = 10f })
 

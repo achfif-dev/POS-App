@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val storeViewModel: StoreProfileViewModel = hiltViewModel()
             val storeProfile by storeViewModel.uiState.collectAsState()
-            PosAppTheme(customPrimaryHex = storeProfile.appColorHex) {
+            PosAppTheme(customPrimaryHex = storeProfile.appColorHex, fontChoice = storeProfile.fontChoice) {
                 Surface(modifier = Modifier) {
                     PosNavHost(sessionManager = sessionManager)
                 }

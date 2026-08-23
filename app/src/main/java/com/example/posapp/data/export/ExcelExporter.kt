@@ -25,9 +25,9 @@ class ExcelExporter @Inject constructor(
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
     fun exportProducts(products: List<ProductEntity>): File {
-        val headers = listOf("Nama", "SKU", "Harga Beli", "Harga Jual", "Stok", "Alert Stok Tipis", "Diskon (%)", "Aktif")
+        val headers = listOf("Nama", "SKU", "Harga Beli", "Harga Jual", "Satuan", "Stok", "Alert Stok Tipis", "Diskon (%)", "Aktif")
         val rows = products.map { p ->
-            listOf(p.name, p.sku, p.purchasePrice, p.sellPrice, p.stock, p.lowStockThreshold, p.discountPercent, if (p.isActive) "Ya" else "Tidak")
+            listOf(p.name, p.sku, p.purchasePrice, p.sellPrice, p.unit, p.stock, p.lowStockThreshold, p.discountPercent, if (p.isActive) "Ya" else "Tidak")
         }
         val file = exportFile("Produk-${System.currentTimeMillis()}.xlsx")
         XlsxWriter.write(file, XlsxWriter.Sheet("Produk", headers, rows))
@@ -58,10 +58,10 @@ class ExcelExporter @Inject constructor(
     fun exportProductsCsv(products: List<ProductEntity>): File {
         val file = exportFile("Produk-${System.currentTimeMillis()}.csv")
         file.bufferedWriter().use { writer ->
-            writer.write("Nama,SKU,Harga Beli,Harga Jual,Stok,Alert Stok Tipis,Diskon (%),Aktif\n")
+            writer.write("Nama,SKU,Harga Beli,Harga Jual,Satuan,Stok,Alert Stok Tipis,Diskon (%),Aktif\n")
             products.forEach { p ->
                 writer.write(
-                    "\"${p.name}\",\"${p.sku}\",${p.purchasePrice},${p.sellPrice},${p.stock},${p.lowStockThreshold},${p.discountPercent},${if (p.isActive) "Ya" else "Tidak"}\n"
+                    "\"${p.name}\",\"${p.sku}\",${p.purchasePrice},${p.sellPrice},\"${p.unit}\",${p.stock},${p.lowStockThreshold},${p.discountPercent},${if (p.isActive) "Ya" else "Tidak"}\n"
                 )
             }
         }

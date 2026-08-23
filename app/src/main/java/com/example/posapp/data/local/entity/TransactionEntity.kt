@@ -53,6 +53,7 @@ data class TransactionItemEntity(
     val productNameSnapshot: String, // simpan snapshot nama & harga saat transaksi
     val priceSnapshot: Double,
     val quantity: Int,
+    val unitSnapshot: String = "pcs", // snapshot satuan produk saat transaksi (pcs/kg/liter/dus/dll)
     val itemDiscount: Double = 0.0,
     val itemNote: String? = null
 ) {

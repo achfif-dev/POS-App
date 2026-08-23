@@ -73,11 +73,14 @@ private val DarkColors = darkColorScheme(
  *
  * @param customPrimaryHex Warna aksen aplikasi custom dari Pengaturan > Tampilan Aplikasi,
  * format "#RRGGBB". Bila null atau tidak valid, dipakai palet default (oranye).
+ * @param fontChoice Key font dari [PosFontOption] (mis. "inter", "poppins"). Bila null atau
+ * tidak dikenal, dipakai font default Plus Jakarta Sans.
  */
 @Composable
 fun PosAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     customPrimaryHex: String? = null,
+    fontChoice: String? = null,
     content: @Composable () -> Unit
 ) {
     val baseScheme = if (darkTheme) DarkColors else LightColors
@@ -85,9 +88,10 @@ fun PosAppTheme(
         val customColor = customPrimaryHex?.let { parseHexColorOrNull(it) }
         if (customColor != null) applyCustomPrimaryColor(customColor, darkTheme, baseScheme) else baseScheme
     }
+    val typography = remember(fontChoice) { posTypography(PosFontOption.fromKey(fontChoice).family) }
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = PosTypography,
+        typography = typography,
         shapes = PosShapes,
         content = content
     )

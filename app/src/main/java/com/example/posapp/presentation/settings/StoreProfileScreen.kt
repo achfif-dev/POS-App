@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.posapp.presentation.theme.PosAccentPresets
+import com.example.posapp.presentation.theme.PosFontOption
 import com.example.posapp.presentation.theme.parseHexColorOrNull
 import java.io.File
 import com.example.posapp.presentation.theme.PosBrandedTopBar
@@ -395,6 +396,59 @@ fun StoreProfileScreen(
                             Spacer(Modifier.width(6.dp))
                             Text("Reset ke Default")
                         }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Font Aplikasi", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Butuh koneksi internet sekali untuk mengunduh font baru, setelah itu tersimpan di HP",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        PosFontOption.entries.forEach { option ->
+                            val isSelected = profile.fontChoice == option.key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.setFontChoice(option.key) }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = isSelected, onClick = { viewModel.setFontChoice(option.key) })
+                                Spacer(Modifier.width(4.dp))
+                                Text(option.label, fontFamily = option.family)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Bahasa Struk & Invoice", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Bahasa yang dipakai di label struk cetak & PDF invoice (mis. Subtotal/Total)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = profile.receiptLanguage == "id",
+                            onClick = { viewModel.setReceiptLanguage("id") },
+                            label = { Text("Indonesia") }
+                        )
+                        FilterChip(
+                            selected = profile.receiptLanguage == "en",
+                            onClick = { viewModel.setReceiptLanguage("en") },
+                            label = { Text("English") }
+                        )
                     }
                 }
             }

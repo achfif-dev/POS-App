@@ -25,6 +25,7 @@ data class ProductEntity(
     val purchasePrice: Double,      // harga beli
     val sellPrice: Double,          // harga jual
     val stock: Int,
+    val unit: String = "pcs",       // satuan produk (pcs, kg, liter, dus, dll) — lihat ProductUnits
     val lowStockThreshold: Int = 5, // ambang batas alert stok tipis
     val photoPath: String? = null,  // path foto lokal di internal storage
     val variantName: String? = null,   // label bebas (dipakai jika produk TIDAK punya matrix varian)
