@@ -58,4 +58,53 @@ class TransactionRepository @Inject constructor(
         }
         return txId
     }
+
+    /**
+     * Mengoreksi transaksi yang sudah tersimpan (fitur "Riwayat Penjualan bisa diedit Admin",
+     * untuk memperbaiki kesalahan input kasir). Menyesuaikan stok produk/varian berdasarkan
+     * selisih quantity tiap item, mengembalikan stok utuh untuk item yang dihapus, lalu
+     * menyimpan total baru + jejak audit (editedByName/editedAt).
+     *
+     * @param originalItems item transaksi SEBELUM diedit (dipakai untuk menghitung selisih stok).
+     * @param updatedItems item yang tersisa setelah diedit (quantity/harga/diskon boleh berubah).
+     * @param deletedItemIds id item yang dihapus sepenuhnya dari transaksi.
+     */
+    suspend fun updateTransactionWithCorrection(
+        updatedTransaction: TransactionEntity,
+        originalItems: List<TransactionItemEntity>,
+        updatedItems: List<TransactionItemEntity>,
+        deletedItemIds: List<Long>,
+        editedByName: String
+    ) {
+        // Item yang dihapus total: kembalikan stoknya lalu hapus baris item.
+        deletedItemIds.forEach { itemId ->
+            val original = originalItems.find { it.id == itemId } ?: return@forEach
+            if (original.variantId != null) {
+                productVariantDao.increaseStock(original.variantId, original.quantity)
+            } else {
+                productDao.increaseStock(original.productId, original.quantity)
+            }
+            transactionDao.deleteItem(itemId)
+        }
+
+        // Item yang masih ada: sesuaikan stok hanya sebesar SELISIH quantity lama vs baru.
+        updatedItems.forEach { updated ->
+            val original = originalItems.find { it.id == updated.id }
+            val delta = updated.quantity - (original?.quantity ?: 0) // >0 = tambah qty (stok berkurang lagi)
+            if (delta != 0) {
+                if (updated.variantId != null) {
+                    if (delta > 0) productVariantDao.decreaseStock(updated.variantId, delta)
+                    else productVariantDao.increaseStock(updated.variantId, -delta)
+                } else {
+                    if (delta > 0) productDao.decreaseStock(updated.productId, delta)
+                    else productDao.increaseStock(updated.productId, -delta)
+                }
+            }
+            transactionDao.updateItem(updated)
+        }
+
+        transactionDao.updateTransaction(
+            updatedTransaction.copy(editedByName = editedByName, editedAt = System.currentTimeMillis())
+        )
+    }
 }

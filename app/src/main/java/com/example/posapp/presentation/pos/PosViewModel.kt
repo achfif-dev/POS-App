@@ -122,7 +122,8 @@ class PosViewModel @Inject constructor(
                     transaction = receipt.first,
                     items = receipt.second,
                     storeAddress = profile.address,
-                    receiptFooter = profile.receiptFooter
+                    receiptFooter = profile.receiptFooter,
+                    logoImagePath = profile.logoImagePath
                 )
             }
             when (result) {
@@ -142,7 +143,8 @@ class PosViewModel @Inject constructor(
                     transaction = receipt.first,
                     items = receipt.second,
                     storeAddress = profile.address,
-                    receiptFooter = profile.receiptFooter
+                    receiptFooter = profile.receiptFooter,
+                    logoImagePath = profile.logoImagePath
                 )
             }
             _events.emit(PosEvent.PdfReady(file))

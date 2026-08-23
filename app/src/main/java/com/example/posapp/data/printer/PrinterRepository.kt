@@ -3,11 +3,14 @@ package com.example.posapp.data.printer
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.dantsu.escposprinter.EscPosPrinter
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothPrintersConnections
+import com.dantsu.escposprinter.textparser.PrinterTextParserImg
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
@@ -61,7 +64,8 @@ class PrinterRepository @Inject constructor(
         transaction: TransactionEntity,
         items: List<TransactionItemEntity>,
         storeAddress: String = "",
-        receiptFooter: String = "Terima kasih!"
+        receiptFooter: String = "Terima kasih!",
+        logoImagePath: String? = null
     ): PrintResult {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
@@ -77,6 +81,24 @@ class PrinterRepository @Inject constructor(
             val printer = EscPosPrinter(connection, 203, 48f, 32)
 
             val sb = StringBuilder()
+            val logoBitmap = logoImagePath?.let { path ->
+                try {
+                    BitmapFactory.decodeFile(path)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (logoBitmap != null) {
+                // Batasi lebar logo agar proporsional dengan lebar kertas struk (~384 dots / 58mm).
+                val maxWidth = 280
+                val scaledLogo = if (logoBitmap.width > maxWidth) {
+                    val scale = maxWidth.toFloat() / logoBitmap.width
+                    Bitmap.createScaledBitmap(logoBitmap, maxWidth, (logoBitmap.height * scale).toInt(), true)
+                } else {
+                    logoBitmap
+                }
+                sb.append("[C]<img>${PrinterTextParserImg.bitmapToHexadecimalString(printer, scaledLogo)}</img>\n")
+            }
             sb.append("[C]<b>$storeName</b>\n")
             if (storeAddress.isNotBlank()) sb.append("[C]$storeAddress\n")
             sb.append("[C]--------------------------------\n")

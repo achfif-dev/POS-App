@@ -28,6 +28,15 @@ interface TransactionDao {
     @Insert
     suspend fun insertTransaction(transaction: TransactionEntity): Long
 
+    @Update
+    suspend fun updateTransaction(transaction: TransactionEntity)
+
+    @Update
+    suspend fun updateItem(item: TransactionItemEntity)
+
+    @Query("DELETE FROM transaction_items WHERE id = :itemId")
+    suspend fun deleteItem(itemId: Long)
+
     @Insert
     suspend fun insertItems(items: List<TransactionItemEntity>)
 

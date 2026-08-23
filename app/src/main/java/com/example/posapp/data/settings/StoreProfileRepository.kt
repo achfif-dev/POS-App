@@ -21,7 +21,9 @@ data class StoreProfile(
     val receiptFooter: String = "Terima kasih telah berbelanja!",
     val qrisImagePath: String? = null,
     val qrisRawContent: String? = null, // payload EMVCo mentah hasil decode gambar QRIS, dipakai untuk QRIS dinamis
-    val pinLoginEnabled: Boolean = false
+    val pinLoginEnabled: Boolean = false,
+    val logoImagePath: String? = null, // logo toko — dipakai di header struk cetak & PDF invoice
+    val appColorHex: String? = null // warna aksen aplikasi custom (mis. "#E8590C"); null = pakai warna default
 )
 
 @Singleton
@@ -36,6 +38,8 @@ class StoreProfileRepository @Inject constructor(
         val QRIS_PATH = stringPreferencesKey("qris_image_path")
         val QRIS_RAW_CONTENT = stringPreferencesKey("qris_raw_content")
         val PIN_LOGIN_ENABLED = booleanPreferencesKey("pin_login_enabled")
+        val LOGO_PATH = stringPreferencesKey("store_logo_path")
+        val APP_COLOR_HEX = stringPreferencesKey("app_color_hex")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -46,7 +50,9 @@ class StoreProfileRepository @Inject constructor(
             receiptFooter = prefs[Keys.FOOTER] ?: "Terima kasih telah berbelanja!",
             qrisImagePath = prefs[Keys.QRIS_PATH],
             qrisRawContent = prefs[Keys.QRIS_RAW_CONTENT],
-            pinLoginEnabled = prefs[Keys.PIN_LOGIN_ENABLED] ?: false
+            pinLoginEnabled = prefs[Keys.PIN_LOGIN_ENABLED] ?: false,
+            logoImagePath = prefs[Keys.LOGO_PATH],
+            appColorHex = prefs[Keys.APP_COLOR_HEX]
         )
     }
 
@@ -78,5 +84,18 @@ class StoreProfileRepository @Inject constructor(
 
     suspend fun setPinLoginEnabled(enabled: Boolean) {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.PIN_LOGIN_ENABLED] = enabled }
+    }
+
+    suspend fun updateLogoImagePath(path: String?) {
+        context.storeProfileDataStore.edit { prefs ->
+            if (path == null) prefs.remove(Keys.LOGO_PATH) else prefs[Keys.LOGO_PATH] = path
+        }
+    }
+
+    /** @param hex Format "#RRGGBB", atau null untuk kembali ke warna default aplikasi. */
+    suspend fun updateAppColorHex(hex: String?) {
+        context.storeProfileDataStore.edit { prefs ->
+            if (hex == null) prefs.remove(Keys.APP_COLOR_HEX) else prefs[Keys.APP_COLOR_HEX] = hex
+        }
     }
 }

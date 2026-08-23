@@ -68,4 +68,24 @@ class StoreProfileViewModel @Inject constructor(
     fun setPinLoginEnabled(enabled: Boolean) {
         viewModelScope.launch { storeProfileRepository.setPinLoginEnabled(enabled) }
     }
+
+    /** Simpan logo toko baru (dipakai di header struk cetak & PDF invoice), atau null untuk menghapus. */
+    fun setLogoImagePath(path: String?) {
+        viewModelScope.launch {
+            storeProfileRepository.updateLogoImagePath(path)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (path != null) "Logo toko tersimpan" else "Logo toko dihapus")
+            )
+        }
+    }
+
+    /** @param hex Format "#RRGGBB", atau null untuk kembali ke warna default aplikasi. */
+    fun setAppColor(hex: String?) {
+        viewModelScope.launch {
+            storeProfileRepository.updateAppColorHex(hex)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (hex != null) "Warna aplikasi diperbarui" else "Warna aplikasi dikembalikan ke default")
+            )
+        }
+    }
 }

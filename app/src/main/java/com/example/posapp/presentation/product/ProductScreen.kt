@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
@@ -19,10 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
+import com.example.posapp.presentation.scanner.BarcodeScannerScreen
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -221,6 +224,7 @@ private fun ProductFormDialog(
 ) {
     var state by remember(form.productId) { mutableStateOf(form) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large) {
@@ -249,7 +253,12 @@ private fun ProductFormDialog(
                     onValueChange = { state = state.copy(sku = it) },
                     label = { Text("SKU / Barcode") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { showScanner = true }) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode")
+                        }
+                    }
                 )
                 Spacer(Modifier.height(8.dp))
 
@@ -376,6 +385,21 @@ private fun ProductFormDialog(
                     }
                 }
             }
+        }
+    }
+
+    if (showScanner) {
+        Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            BarcodeScannerScreen(
+                onBarcodeDetected = { code ->
+                    state = state.copy(sku = code)
+                    showScanner = false
+                },
+                onBack = { showScanner = false }
+            )
         }
     }
 }
@@ -542,6 +566,7 @@ private fun VariantForm(
     var sku by remember { mutableStateOf(initial?.sku ?: "") }
     var stock by remember { mutableStateOf(initial?.stock?.toString() ?: "") }
     var priceOverride by remember { mutableStateOf(initial?.priceOverride?.toString() ?: "") }
+    var showVariantScanner by remember { mutableStateOf(false) }
 
     Column {
         OutlinedTextField(
@@ -551,7 +576,12 @@ private fun VariantForm(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = sku, onValueChange = { sku = it },
-            label = { Text("SKU / Barcode") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+            label = { Text("SKU / Barcode") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { showVariantScanner = true }) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode")
+                }
+            }
         )
         Spacer(Modifier.height(8.dp))
         Row {
@@ -590,6 +620,21 @@ private fun VariantForm(
                 },
                 enabled = label.isNotBlank() && sku.isNotBlank()
             ) { Text("Simpan") }
+        }
+    }
+
+    if (showVariantScanner) {
+        Dialog(
+            onDismissRequest = { showVariantScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            BarcodeScannerScreen(
+                onBarcodeDetected = { code ->
+                    sku = code
+                    showVariantScanner = false
+                },
+                onBack = { showVariantScanner = false }
+            )
         }
     }
 }

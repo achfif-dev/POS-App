@@ -94,7 +94,7 @@ fun SettingsScreen(
                 SettingsNavRow(
                     icon = Icons.Default.Storefront,
                     label = "Profil Toko",
-                    description = "Nama, alamat, telepon, catatan struk & gambar QRIS",
+                    description = "Nama, alamat, QRIS, logo toko & warna aplikasi",
                     onClick = onOpenStoreProfile
                 )
                 HorizontalDivider()

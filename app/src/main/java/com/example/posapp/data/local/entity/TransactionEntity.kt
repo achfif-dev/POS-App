@@ -21,7 +21,9 @@ data class TransactionEntity(
     val changeAmount: Double,
     val note: String? = null,
     val cashierName: String? = null, // snapshot nama kasir yang login saat transaksi (fitur multi-user)
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val editedByName: String? = null, // nama Admin terakhir yang mengoreksi transaksi ini (audit trail)
+    val editedAt: Long? = null
 )
 
 @Entity(

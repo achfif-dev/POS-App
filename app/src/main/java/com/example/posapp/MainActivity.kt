@@ -40,7 +40,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PosAppTheme {
+            val storeViewModel: StoreProfileViewModel = hiltViewModel()
+            val storeProfile by storeViewModel.uiState.collectAsState()
+            PosAppTheme(customPrimaryHex = storeProfile.appColorHex) {
                 Surface(modifier = Modifier) {
                     PosNavHost(sessionManager = sessionManager)
                 }

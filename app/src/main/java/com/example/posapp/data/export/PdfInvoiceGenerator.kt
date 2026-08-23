@@ -1,6 +1,8 @@
 package com.example.posapp.data.export
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -35,12 +37,21 @@ class PdfInvoiceGenerator @Inject constructor(
         transaction: TransactionEntity,
         items: List<TransactionItemEntity>,
         storeAddress: String = "",
-        receiptFooter: String = "Terima kasih!"
+        receiptFooter: String = "Terima kasih!",
+        logoImagePath: String? = null
     ): File {
         val pageWidth = 220
         val lineHeight = 16
+        val logoBitmap = logoImagePath?.let { path ->
+            try {
+                BitmapFactory.decodeFile(path)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        val logoDrawHeight = if (logoBitmap != null) 54 else 0
         val addressLines = if (storeAddress.isNotBlank()) 1 else 0
-        val headerHeight = 90 + (addressLines * 12)
+        val headerHeight = 90 + (addressLines * 12) + logoDrawHeight
         val footerHeight = 70
         val pageHeight = headerHeight + (items.size * lineHeight) + footerHeight + 60
 
@@ -56,6 +67,21 @@ class PdfInvoiceGenerator @Inject constructor(
         val rightPaint = Paint().apply { textSize = 9f; typeface = Typeface.DEFAULT; textAlign = Paint.Align.RIGHT }
 
         var y = 16f
+        if (logoBitmap != null) {
+            val maxLogoWidth = 90
+            val maxLogoHeight = 48
+            val scale = minOf(
+                maxLogoWidth.toFloat() / logoBitmap.width,
+                maxLogoHeight.toFloat() / logoBitmap.height,
+                1f
+            )
+            val drawWidth = (logoBitmap.width * scale).toInt().coerceAtLeast(1)
+            val drawHeight = (logoBitmap.height * scale).toInt().coerceAtLeast(1)
+            val scaledLogo = Bitmap.createScaledBitmap(logoBitmap, drawWidth, drawHeight, true)
+            val logoLeft = (pageWidth - drawWidth) / 2f
+            canvas.drawBitmap(scaledLogo, logoLeft, y, null)
+            y += drawHeight + 10f
+        }
         canvas.drawText(storeName, pageWidth / 2f, y, titlePaint)
         y += 14f
         if (storeAddress.isNotBlank()) {
