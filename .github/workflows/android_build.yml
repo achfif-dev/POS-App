@@ -9,6 +9,11 @@ jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
+    env:
+      # Didefinisikan di level job (bukan hanya di dalam satu step) supaya bisa dipakai
+      # dengan aman baik di kondisi 'if:' maupun di step lain manapun tanpa hasil yang
+      # tidak konsisten.
+      HAS_RELEASE_SECRETS: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' && secrets.RELEASE_KEYSTORE_PASSWORD != '' && secrets.RELEASE_KEY_ALIAS != '' && secrets.RELEASE_KEY_PASSWORD != '' }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -46,17 +51,55 @@ jobs:
       # Kalau secrets belum diisi, step ini di-skip dan Release APK yang terupload TETAP
       # UNSIGNED (belum bisa diinstall) — itu tandanya secrets di atas belum kamu buat.
       - name: Decode release keystore
-        if: ${{ env.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_SECRETS == 'true' }}
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-        run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "${{ runner.temp }}/release.keystore"
+        # 'tr -d' membuang spasi/baris-baru tersembunyi yang kadang ikut ter-copy saat
+        # menyalin nilai base64 ke GitHub Secrets, supaya file .keystore tidak korup.
+        run: |
+          echo "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "${{ runner.temp }}/release.keystore"
+
+      # Verifikasi password SEBELUM assembleRelease, supaya kalau salah, errornya jelas
+      # ("password keystore tidak cocok") alih-alih stack trace Gradle yang membingungkan.
+      # Ini juga mendeteksi kalau RELEASE_KEYSTORE_BASE64 tidak sinkron dengan
+      # RELEASE_KEYSTORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD (kasus paling
+      # umum: generate_keystore.yml dijalankan ulang lalu hanya sebagian secret diupdate).
+      - name: Verify release keystore credentials
+        if: ${{ env.HAS_RELEASE_SECRETS == 'true' }}
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if ! keytool -list -v \
+              -keystore "${{ runner.temp }}/release.keystore" \
+              -alias "$RELEASE_KEY_ALIAS" \
+              -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+              -keypass "$RELEASE_KEY_PASSWORD" > /dev/null 2>&1; then
+            echo "::error::Gagal membuka release.keystore dengan secrets yang ada di repo ini."
+            echo "::error::Kemungkinan besar RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD,"
+            echo "::error::RELEASE_KEY_ALIAS, dan RELEASE_KEY_PASSWORD di GitHub Secrets tidak"
+            echo "::error::berasal dari keystore yang SAMA (misalnya workflow"
+            echo "::error::'Generate Release Keystore' pernah dijalankan lebih dari sekali, atau"
+            echo "::error::ada spasi/baris baru tidak sengaja ikut ter-copy)."
+            echo "::error::Perbaikan: jalankan ulang workflow 'Generate Release Keystore' SATU"
+            echo "::error::KALI, lalu update KEEMPAT secrets sekaligus dari file keystore-info.txt"
+            echo "::error::yang dihasilkan (jangan update sebagian saja)."
+            exit 1
+          fi
+          echo "Keystore & password valid, lanjut build release."
 
       - name: Build Release APK
+        if: ${{ env.HAS_RELEASE_SECRETS == 'true' }}
         env:
           RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: gradle assembleRelease --stacktrace
+
+      - name: Build Release APK (unsigned, secrets belum lengkap)
+        if: ${{ env.HAS_RELEASE_SECRETS != 'true' }}
         run: gradle assembleRelease --stacktrace
 
       - name: Upload Debug APK artifact
