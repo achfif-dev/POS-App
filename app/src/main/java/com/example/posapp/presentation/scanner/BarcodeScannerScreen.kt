@@ -30,7 +30,8 @@ import java.util.concurrent.Executors
  * Memanggil [onBarcodeDetected] sekali saat barcode pertama berhasil dibaca, lalu berhenti
  * memproses frame berikutnya untuk mencegah callback berulang pada barcode yang sama.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalGetImage::class)
+@OptIn(ExperimentalMaterial3Api::class)
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 @Composable
 fun BarcodeScannerScreen(
     onBarcodeDetected: (String) -> Unit,
