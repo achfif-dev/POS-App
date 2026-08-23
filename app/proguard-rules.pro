@@ -10,3 +10,12 @@
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.apache.commons.compress.**
 -dontwarn org.apache.poi.**
+
+# StAX API (javax.xml.stream) tidak tersedia di runtime Android,
+# hanya dipakai secara opsional oleh org.apache.xmlbeans (dependency Apache POI)
+-dontwarn javax.xml.stream.**
+-dontwarn javax.xml.namespace.**
+
+# Saxon XPath engine (net.sf.saxon) — dependency opsional xmlbeans,
+# tidak dipakai oleh jalur kode Apache POI yang digunakan di app ini
+-dontwarn net.sf.saxon.**
