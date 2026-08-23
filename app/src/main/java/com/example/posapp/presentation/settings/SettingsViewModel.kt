@@ -75,6 +75,19 @@ class SettingsViewModel @Inject constructor(
 
     fun listLocalBackups(): List<File> = backupRepository.listLocalBackups()
 
+    /** Hapus satu file backup lokal dari Riwayat Backup Lokal (tidak memengaruhi data aplikasi). */
+    fun deleteBackup(file: File) {
+        viewModelScope.launch {
+            val deleted = withContext(Dispatchers.IO) { backupRepository.deleteBackup(file) }
+            if (deleted) {
+                refreshBackups()
+                _events.emit(SettingsEvent.ShowMessage("Backup \"${file.name}\" dihapus"))
+            } else {
+                _events.emit(SettingsEvent.ShowMessage("Gagal menghapus file backup"))
+            }
+        }
+    }
+
     /** Menyalin file yang sudah di-export ke lokasi pilihan pengguna (mis. folder Download). */
     fun saveExportToUri(file: File, destinationUri: Uri) {
         viewModelScope.launch {

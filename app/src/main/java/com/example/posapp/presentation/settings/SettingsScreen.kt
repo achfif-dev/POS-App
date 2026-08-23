@@ -12,8 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,6 +45,7 @@ fun SettingsScreen(
     val backups by viewModel.backups.collectAsState()
     var showRestorePicker by remember { mutableStateOf(false) }
     var backupPendingRestore by remember { mutableStateOf<File?>(null) }
+    var backupPendingDelete by remember { mutableStateOf<File?>(null) }
 
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -164,7 +166,8 @@ fun SettingsScreen(
                                             "Bagikan file backup"
                                         )
                                     )
-                                }
+                                },
+                                onDelete = { backupPendingDelete = file }
                             )
                         }
                     }
@@ -228,6 +231,23 @@ fun SettingsScreen(
             }
         )
     }
+
+    backupPendingDelete?.let { file ->
+        AlertDialog(
+            onDismissRequest = { backupPendingDelete = null },
+            title = { Text("Hapus backup ini?") },
+            text = { Text("File backup \"${file.name}\" akan dihapus dari perangkat. Data aplikasi yang sedang berjalan tidak terpengaruh.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBackup(file)
+                    backupPendingDelete = null
+                }) { Text("Hapus", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupPendingDelete = null }) { Text("Batal") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -280,7 +300,7 @@ private fun SettingsActionRow(label: String, description: String, onClick: () ->
 }
 
 @Composable
-private fun BackupHistoryRow(file: File, onRestore: () -> Unit, onShare: () -> Unit) {
+private fun BackupHistoryRow(file: File, onRestore: () -> Unit, onShare: () -> Unit, onDelete: () -> Unit) {
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -296,8 +316,15 @@ private fun BackupHistoryRow(file: File, onRestore: () -> Unit, onShare: () -> U
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        // Sebelumnya ikon di sini adalah "RestoreFromTrash" (bergambar tong sampah) tapi
+        // dipasang ke aksi RESTORE, bukan hapus — makanya terlihat seperti tombol hapus
+        // padahal tidak menghapus apa-apa, dan tidak ada aksi hapus sungguhan sama sekali.
+        // Sekarang dipisah jelas: ikon restore & ikon hapus (dengan konfirmasi) masing-masing.
         IconButton(onClick = onRestore) {
-            Icon(Icons.Default.RestoreFromTrash, contentDescription = "Restore dari file ini")
+            Icon(Icons.Default.SettingsBackupRestore, contentDescription = "Restore dari file ini")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Hapus backup ini", tint = MaterialTheme.colorScheme.error)
         }
         TextButton(onClick = onShare) { Text("Bagikan") }
     }

@@ -70,4 +70,13 @@ class BackupRepository @Inject constructor(
         val backupDir = File(context.getExternalFilesDir(null), "backups")
         return backupDir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
+
+    /** Menghapus satu file backup lokal dari Riwayat Backup Lokal. */
+    fun deleteBackup(file: File): Boolean {
+        return try {
+            file.exists() && file.delete()
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
