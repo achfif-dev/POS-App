@@ -1,11 +1,6 @@
 # Kasir POS (Full Offline) — Android Kotlin + Jetpack Compose
 
 Aplikasi kasir offline-first, Clean Architecture, siap di-build otomatis lewat GitHub Actions
-tanpa perlu PC lokal.
-
-# Kasir POS (Full Offline) — Android Kotlin + Jetpack Compose
-
-Aplikasi kasir offline-first, Clean Architecture, siap di-build otomatis lewat GitHub Actions
 tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung mode gelap).
 
 ## Fitur yang sudah diimplementasikan penuh
