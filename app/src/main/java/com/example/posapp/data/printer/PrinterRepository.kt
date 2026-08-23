@@ -1,6 +1,10 @@
 package com.example.posapp.data.printer
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import com.dantsu.escposprinter.EscPosPrinter
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothPrintersConnections
@@ -39,6 +43,7 @@ class PrinterRepository @Inject constructor(
 
     /** Nama printer Bluetooth yang sudah di-pair di sistem (untuk ditampilkan sebagai pilihan). */
     fun listPairedPrinters(): List<String> {
+        if (!hasBluetoothConnectPermission()) return emptyList()
         return try {
             BluetoothPrintersConnections().list?.map { it.device.name ?: "Unknown Printer" } ?: emptyList()
         } catch (e: Exception) {
@@ -46,11 +51,23 @@ class PrinterRepository @Inject constructor(
         }
     }
 
+    /** Cek izin BLUETOOTH_CONNECT (wajib di Android 12+/API 31). Di bawah itu izin bersifat install-time. */
+    private fun hasBluetoothConnectPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun printReceipt(
         storeName: String,
         transaction: TransactionEntity,
         items: List<TransactionItemEntity>
     ): PrintResult {
+        if (!hasBluetoothConnectPermission()) {
+            return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
+        }
         return try {
             val connection: BluetoothConnection = BluetoothPrintersConnections.selectFirstPaired()
                 ?: return PrintResult.Error("Tidak ada printer Bluetooth yang terpasang/di-pair")
