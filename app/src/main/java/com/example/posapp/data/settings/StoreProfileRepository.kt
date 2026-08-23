@@ -2,6 +2,7 @@ package com.example.posapp.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,7 +24,9 @@ data class StoreProfile(
     val qrisRawContent: String? = null, // payload EMVCo mentah hasil decode gambar QRIS, dipakai untuk QRIS dinamis
     val pinLoginEnabled: Boolean = false,
     val logoImagePath: String? = null, // logo toko — dipakai di header struk cetak & PDF invoice
-    val appColorHex: String? = null // warna aksen aplikasi custom (mis. "#E8590C"); null = pakai warna default
+    val appColorHex: String? = null, // warna aksen aplikasi custom (mis. "#E8590C"); null = pakai warna default
+    val taxEnabled: Boolean = true, // matikan untuk toko yang tidak memungut pajak/PPN
+    val taxPercent: Double = 11.0 // persentase pajak/PPN yang dipakai saat taxEnabled = true
 )
 
 @Singleton
@@ -40,6 +43,8 @@ class StoreProfileRepository @Inject constructor(
         val PIN_LOGIN_ENABLED = booleanPreferencesKey("pin_login_enabled")
         val LOGO_PATH = stringPreferencesKey("store_logo_path")
         val APP_COLOR_HEX = stringPreferencesKey("app_color_hex")
+        val TAX_ENABLED = booleanPreferencesKey("tax_enabled")
+        val TAX_PERCENT = doublePreferencesKey("tax_percent")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -52,7 +57,9 @@ class StoreProfileRepository @Inject constructor(
             qrisRawContent = prefs[Keys.QRIS_RAW_CONTENT],
             pinLoginEnabled = prefs[Keys.PIN_LOGIN_ENABLED] ?: false,
             logoImagePath = prefs[Keys.LOGO_PATH],
-            appColorHex = prefs[Keys.APP_COLOR_HEX]
+            appColorHex = prefs[Keys.APP_COLOR_HEX],
+            taxEnabled = prefs[Keys.TAX_ENABLED] ?: true,
+            taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0
         )
     }
 
@@ -96,6 +103,14 @@ class StoreProfileRepository @Inject constructor(
     suspend fun updateAppColorHex(hex: String?) {
         context.storeProfileDataStore.edit { prefs ->
             if (hex == null) prefs.remove(Keys.APP_COLOR_HEX) else prefs[Keys.APP_COLOR_HEX] = hex
+        }
+    }
+
+    /** Aktifkan/nonaktifkan pajak & atur persentasenya (mis. PPN 11%, atau 0 untuk toko non-PKP). */
+    suspend fun updateTaxSettings(enabled: Boolean, percent: Double) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.TAX_ENABLED] = enabled
+            prefs[Keys.TAX_PERCENT] = percent
         }
     }
 }

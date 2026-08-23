@@ -30,7 +30,8 @@ data class ProductFormState(
     val lowStockThreshold: String = "5",
     val discountPercent: String = "0",
     val variantName: String = "",
-    val hasVariants: Boolean = false
+    val hasVariants: Boolean = false,
+    val photoPath: String? = null
 ) {
     val isValid: Boolean
         get() = name.isNotBlank() && sku.isNotBlank() &&
@@ -99,7 +100,7 @@ class ProductViewModel @Inject constructor(
                     discountPercent = form.discountPercent.toDoubleOrNull() ?: 0.0,
                     variantName = form.variantName.ifBlank { null },
                     hasVariants = form.hasVariants,
-                    photoPath = existing?.photoPath,
+                    photoPath = form.photoPath,
                     createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 )

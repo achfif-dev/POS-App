@@ -1,15 +1,22 @@
 package com.example.posapp.presentation.product
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
@@ -17,15 +24,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.presentation.scanner.BarcodeScannerScreen
+import java.io.File
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -114,7 +126,8 @@ fun ProductScreen(
                                     lowStockThreshold = product.lowStockThreshold.toString(),
                                     discountPercent = product.discountPercent.toString(),
                                     variantName = product.variantName.orEmpty(),
-                                    hasVariants = product.hasVariants
+                                    hasVariants = product.hasVariants,
+                                    photoPath = product.photoPath
                                 )
                             },
                             onManageVariants = { variantManagerProductId = product.id },
@@ -186,6 +199,30 @@ private fun ProductRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            if (product.photoPath != null) {
+                AsyncImage(
+                    model = product.photoPath,
+                    contentDescription = product.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    Icons.Default.Inventory2,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(product.name, fontWeight = FontWeight.SemiBold)
             Text(
@@ -225,6 +262,18 @@ private fun ProductFormDialog(
     var state by remember(form.productId) { mutableStateOf(form) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val photoDir = File(context.filesDir, "product_photos").apply { mkdirs() }
+            val destFile = File(photoDir, "product_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            state = state.copy(photoPath = destFile.absolutePath)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large) {
@@ -239,6 +288,48 @@ private fun ProductFormDialog(
                     style = MaterialTheme.typography.titleLarge
                 )
                 Spacer(Modifier.height(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (state.photoPath != null) {
+                        AsyncImage(
+                            model = state.photoPath,
+                            contentDescription = "Foto produk",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (state.photoPath != null) "Ganti Foto" else "Tambah Foto")
+                    }
+                    if (state.photoPath != null) {
+                        TextButton(onClick = { state = state.copy(photoPath = null) }) {
+                            Text("Hapus Foto")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
 
                 OutlinedTextField(
                     value = state.name,

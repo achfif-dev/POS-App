@@ -31,12 +31,17 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.posapp.presentation.theme.PosAccentPresets
 import com.example.posapp.presentation.theme.parseHexColorOrNull
 import java.io.File
+
+/** Format persentase pajak tanpa desimal berlebih, mis. 11.0 -> "11", 8.5 -> "8.5". */
+private fun formatTaxPercent(percent: Double): String =
+    if (percent == percent.toLong().toDouble()) percent.toLong().toString() else percent.toString()
 
 /** Layar Profil Toko — nama, alamat, telepon, catatan struk, dan gambar QRIS statis. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +82,7 @@ fun StoreProfileScreen(
     }
 
     var customHexInput by remember(profile.appColorHex) { mutableStateOf(profile.appColorHex ?: "") }
+    var taxPercentInput by remember(profile.taxPercent) { mutableStateOf(formatTaxPercent(profile.taxPercent)) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -132,6 +138,60 @@ fun StoreProfileScreen(
                 onClick = { viewModel.save(name, address, phone, footer) },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Simpan Profil Toko") }
+
+            Spacer(Modifier.height(28.dp))
+            Text("Pajak (PPN)", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Nonaktifkan bila toko tidak memungut pajak ke pelanggan",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Pungut Pajak", fontWeight = FontWeight.Medium)
+                            Text(
+                                if (profile.taxEnabled) "Pajak ${formatTaxPercent(profile.taxPercent)}% ditambahkan ke setiap transaksi"
+                                else "Transaksi tidak dikenakan pajak",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = profile.taxEnabled,
+                            onCheckedChange = { checked ->
+                                viewModel.setTaxSettings(checked, taxPercentInput.toDoubleOrNull() ?: profile.taxPercent)
+                            }
+                        )
+                    }
+                    if (profile.taxEnabled) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = taxPercentInput,
+                                onValueChange = { taxPercentInput = it.filter { c -> c.isDigit() || c == '.' } },
+                                label = { Text("Persentase Pajak (%)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.setTaxSettings(true, taxPercentInput.toDoubleOrNull() ?: 11.0)
+                                },
+                                enabled = taxPercentInput.toDoubleOrNull() != null
+                            ) { Text("Simpan") }
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.height(28.dp))
             Text("Gambar QRIS", style = MaterialTheme.typography.titleMedium)

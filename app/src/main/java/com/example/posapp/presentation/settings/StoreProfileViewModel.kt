@@ -88,4 +88,14 @@ class StoreProfileViewModel @Inject constructor(
             )
         }
     }
+
+    /** Aktifkan/nonaktifkan pajak (PPN) & atur persentasenya. Berlaku untuk transaksi berikutnya. */
+    fun setTaxSettings(enabled: Boolean, percent: Double) {
+        viewModelScope.launch {
+            storeProfileRepository.updateTaxSettings(enabled, percent.coerceIn(0.0, 100.0))
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (enabled) "Pajak diaktifkan (${percent}%)" else "Pajak dinonaktifkan")
+            )
+        }
+    }
 }

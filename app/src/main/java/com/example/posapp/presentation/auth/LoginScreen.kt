@@ -2,10 +2,9 @@ package com.example.posapp.presentation.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Lock
@@ -35,59 +34,102 @@ fun LoginScreen(
     }
 
     Scaffold { padding ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .safeDrawingPadding()
         ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(72.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        if (uiState.isFirstRun) Icons.Default.Storefront else Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
+            val isCompactHeight = maxHeight < 480.dp
+
+            if (isCompactHeight) {
+                // Layar pendek (landscape ponsel): header & keypad berdampingan + bisa discroll
+                // agar tombol "Konfirmasi" tidak pernah terpotong oleh navigation bar.
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LoginHeader(isFirstRun = uiState.isFirstRun)
+                        Spacer(Modifier.height(16.dp))
+                        PinDots(length = uiState.pin.length)
+                        uiState.errorMessage?.let {
+                            Spacer(Modifier.height(12.dp))
+                            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    NumericKeypad(
+                        onDigit = viewModel::onDigit,
+                        onBackspace = viewModel::onBackspace,
+                        onSubmit = viewModel::submit,
+                        isLoading = uiState.isLoading
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    LoginHeader(isFirstRun = uiState.isFirstRun)
+
+                    Spacer(Modifier.height(32.dp))
+                    PinDots(length = uiState.pin.length)
+
+                    uiState.errorMessage?.let {
+                        Spacer(Modifier.height(12.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    Spacer(Modifier.height(32.dp))
+                    NumericKeypad(
+                        onDigit = viewModel::onDigit,
+                        onBackspace = viewModel::onBackspace,
+                        onSubmit = viewModel::submit,
+                        isLoading = uiState.isLoading
                     )
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            Text(
-                if (uiState.isFirstRun) "Selamat Datang!" else "Masuk",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (uiState.isFirstRun) "Buat PIN admin untuk mengamankan aplikasi kasir ini"
-                else "Masukkan PIN untuk melanjutkan",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        }
+    }
+}
 
-            Spacer(Modifier.height(32.dp))
-            PinDots(length = uiState.pin.length)
-
-            uiState.errorMessage?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-            }
-
-            Spacer(Modifier.height(32.dp))
-            NumericKeypad(
-                onDigit = viewModel::onDigit,
-                onBackspace = viewModel::onBackspace,
-                onSubmit = viewModel::submit,
-                isLoading = uiState.isLoading
+@Composable
+private fun LoginHeader(isFirstRun: Boolean) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.size(72.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                if (isFirstRun) Icons.Default.Storefront else Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(32.dp)
             )
         }
     }
+    Spacer(Modifier.height(20.dp))
+    Text(
+        if (isFirstRun) "Selamat Datang!" else "Masuk",
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        if (isFirstRun) "Buat PIN admin untuk mengamankan aplikasi kasir ini"
+        else "Masukkan PIN untuk melanjutkan",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable
@@ -115,28 +157,36 @@ private fun NumericKeypad(
     onSubmit: () -> Unit,
     isLoading: Boolean
 ) {
-    val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back")
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier.width(260.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        items(keys) { key ->
-            when (key) {
-                "" -> Spacer(Modifier.size(64.dp))
-                "back" -> KeypadButton(icon = Icons.AutoMirrored.Filled.Backspace, onClick = onBackspace)
-                else -> KeypadButton(label = key, onClick = { onDigit(key) })
+    // Grid manual (bukan LazyVerticalGrid) karena keypad ini dipakai di dalam Column yang
+    // bisa discroll (verticalScroll) — menaruh layout lazy (yang juga scrollable) di dalam
+    // Column scrollable akan crash ("infinity maximum height constraints").
+    val rows = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf("", "0", "back")
+    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        rows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                row.forEach { key ->
+                    when (key) {
+                        "" -> Spacer(Modifier.size(64.dp))
+                        "back" -> KeypadButton(icon = Icons.AutoMirrored.Filled.Backspace, onClick = onBackspace)
+                        else -> KeypadButton(label = key, onClick = { onDigit(key) })
+                    }
+                }
             }
+            Spacer(Modifier.height(16.dp))
         }
-    }
-    Spacer(Modifier.height(24.dp))
-    Button(
-        onClick = onSubmit,
-        modifier = Modifier.width(260.dp).height(50.dp),
-        enabled = !isLoading
-    ) {
-        Text(if (isLoading) "Memproses..." else "Konfirmasi")
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onSubmit,
+            modifier = Modifier.width(260.dp).height(50.dp),
+            enabled = !isLoading
+        ) {
+            Text(if (isLoading) "Memproses..." else "Konfirmasi")
+        }
     }
 }
 

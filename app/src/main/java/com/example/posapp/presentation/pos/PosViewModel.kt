@@ -105,6 +105,19 @@ class PosViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PosUiState())
 
+    init {
+        // Selaraskan pajak keranjang dengan pengaturan toko (Pengaturan > Profil Toko > Pajak)
+        // secara reaktif, termasuk saat pajak dinonaktifkan (taxPercent otomatis jadi 0).
+        viewModelScope.launch {
+            storeProfileRepository.profile.collect { profile ->
+                val effectiveTaxPercent = if (profile.taxEnabled) profile.taxPercent else 0.0
+                if (_cart.value.taxPercent != effectiveTaxPercent) {
+                    _cart.value = _cart.value.copy(taxPercent = effectiveTaxPercent)
+                }
+            }
+        }
+    }
+
     private val _lastReceipt = MutableStateFlow<Pair<TransactionEntity, List<TransactionItemEntity>>?>(null)
     val lastReceipt: StateFlow<Pair<TransactionEntity, List<TransactionItemEntity>>?> = _lastReceipt.asStateFlow()
 

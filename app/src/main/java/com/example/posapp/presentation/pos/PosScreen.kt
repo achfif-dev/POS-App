@@ -51,6 +51,10 @@ import java.util.Locale
 
 private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
 
+/** Format persentase pajak tanpa desimal berlebih, mis. 11.0 -> "11", 8.5 -> "8.5". */
+private fun formatPercent(percent: Double): String =
+    if (percent == percent.toLong().toDouble()) percent.toLong().toString() else percent.toString()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PosScreen(
@@ -412,12 +416,21 @@ private fun ProductCard(product: ProductEntity, onClick: () -> Unit) {
                         .background(accent.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = accent,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (product.photoPath != null) {
+                        AsyncImage(
+                            model = product.photoPath,
+                            contentDescription = product.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
                 if (isLowStock) {
                     Spacer(Modifier.weight(1f))
@@ -472,7 +485,9 @@ private fun CartSummary(cart: Cart) {
         HorizontalDivider()
         SummaryRow("Subtotal", rupiah.format(cart.subtotal))
         SummaryRow("Diskon", "- " + rupiah.format(cart.transactionDiscount))
-        SummaryRow("Pajak (${cart.taxPercent}%)", rupiah.format(cart.taxAmount))
+        if (cart.taxPercent > 0.0) {
+            SummaryRow("Pajak (${formatPercent(cart.taxPercent)}%)", rupiah.format(cart.taxAmount))
+        }
         HorizontalDivider()
         SummaryRow("Total", rupiah.format(cart.total), emphasize = true)
     }

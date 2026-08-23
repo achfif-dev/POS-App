@@ -107,7 +107,9 @@ class PdfInvoiceGenerator @Inject constructor(
         y += 14f
         drawRow(canvas, "Subtotal", rupiah.format(transaction.subtotal), y, normalPaint, rightPaint); y += 12f
         drawRow(canvas, "Diskon", "-" + rupiah.format(transaction.discountAmount), y, normalPaint, rightPaint); y += 12f
-        drawRow(canvas, "Pajak (${transaction.taxPercent}%)", rupiah.format(transaction.taxAmount), y, normalPaint, rightPaint); y += 14f
+        if (transaction.taxPercent > 0.0) {
+            drawRow(canvas, "Pajak (${transaction.taxPercent}%)", rupiah.format(transaction.taxAmount), y, normalPaint, rightPaint); y += 14f
+        }
         drawRow(canvas, "Total", rupiah.format(transaction.total), y, boldPaint, rightPaint); y += 16f
         drawRow(canvas, "Bayar", rupiah.format(transaction.amountPaid), y, normalPaint, rightPaint); y += 12f
         drawRow(canvas, "Kembali", rupiah.format(transaction.changeAmount), y, normalPaint, rightPaint); y += 20f

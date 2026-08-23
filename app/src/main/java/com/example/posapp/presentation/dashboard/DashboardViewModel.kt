@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
@@ -45,41 +44,43 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        refresh()
+        // Muat ringkasan awal, lalu berlangganan perubahan transaksi/stok/sesi secara reaktif
+        // (Room Flow) agar Dashboard langsung update setelah checkout tanpa perlu menutup-buka
+        // ulang aplikasi — sebelumnya ringkasan hanya dihitung sekali saat ViewModel dibuat.
         viewModelScope.launch {
-            combine(sessionManager.currentUser, productRepository.observeLowStock()) { user, lowStock ->
-                user to lowStock
-            }.collect { (user, lowStock) ->
-                _uiState.value = _uiState.value.copy(
-                    cashierName = user?.name,
-                    isAdmin = user == null || user.role == UserRole.ADMIN,
-                    lowStockCount = lowStock.size
-                )
-            }
+            combine(
+                sessionManager.currentUser,
+                productRepository.observeLowStock(),
+                transactionRepository.observeAll()
+            ) { user, lowStock, _ -> user to lowStock }
+                .collect { (user, lowStock) ->
+                    _uiState.value = _uiState.value.copy(
+                        cashierName = user?.name,
+                        isAdmin = user == null || user.role == UserRole.ADMIN,
+                        lowStockCount = lowStock.size
+                    )
+                    loadSummary()
+                }
         }
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val (start, end) = todayRange()
-            val summary = transactionRepository.getSalesSummary(start, end)
-            val top = transactionRepository.getTopSellingItems(start, end, limit = 5)
-            val lowStock = productRepository.observeLowStock().first()
-            val trend = loadRevenueTrend()
-            val user = sessionManager.currentUser.value
-            _uiState.value = _uiState.value.copy(
-                todayRevenue = summary.totalRevenue,
-                todayTransactions = summary.totalTransactions,
-                todayGrossProfit = summary.totalGrossProfit,
-                topProducts = top,
-                lowStockCount = lowStock.size,
-                revenueTrend = trend,
-                cashierName = user?.name,
-                isAdmin = user == null || user.role == UserRole.ADMIN,
-                isLoading = false
-            )
-        }
+        viewModelScope.launch { loadSummary() }
+    }
+
+    private suspend fun loadSummary() {
+        val (start, end) = todayRange()
+        val summary = transactionRepository.getSalesSummary(start, end)
+        val top = transactionRepository.getTopSellingItems(start, end, limit = 5)
+        val trend = loadRevenueTrend()
+        _uiState.value = _uiState.value.copy(
+            todayRevenue = summary.totalRevenue,
+            todayTransactions = summary.totalTransactions,
+            todayGrossProfit = summary.totalGrossProfit,
+            topProducts = top,
+            revenueTrend = trend,
+            isLoading = false
+        )
     }
 
     /** Omzet 7 hari terakhir (termasuk hari ini), untuk grafik tren mini di Dashboard. */

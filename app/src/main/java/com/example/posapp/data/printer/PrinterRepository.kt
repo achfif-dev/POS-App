@@ -114,7 +114,9 @@ class PrinterRepository @Inject constructor(
             sb.append("[C]--------------------------------\n")
             sb.append("[L]Subtotal[R]${rupiah.format(transaction.subtotal)}\n")
             sb.append("[L]Diskon[R]-${rupiah.format(transaction.discountAmount)}\n")
-            sb.append("[L]Pajak (${transaction.taxPercent}%)[R]${rupiah.format(transaction.taxAmount)}\n")
+            if (transaction.taxPercent > 0.0) {
+                sb.append("[L]Pajak (${transaction.taxPercent}%)[R]${rupiah.format(transaction.taxAmount)}\n")
+            }
             sb.append("[L]<b>Total</b>[R]<b>${rupiah.format(transaction.total)}</b>\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[L]Bayar (${paymentLabel(transaction.paymentMethod)})[R]${rupiah.format(transaction.amountPaid)}\n")

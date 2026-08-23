@@ -68,7 +68,8 @@ fun DashboardScreen(
             ExtendedFloatingActionButton(
                 onClick = onOpenPos,
                 icon = { Icon(Icons.Default.PointOfSale, contentDescription = null) },
-                text = { Text("Buka Kasir") }
+                text = { Text("Buka Kasir") },
+                modifier = Modifier.navigationBarsPadding()
             )
         }
     ) { padding ->
