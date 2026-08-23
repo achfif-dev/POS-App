@@ -268,8 +268,11 @@ private fun TransactionDetailDialog(
     val editableItems = remember(transaction.id) {
         detail.items.map { item ->
             EditableItemState(
+                // productNameSnapshot sudah menyertakan label varian saat checkout (lihat
+                // CheckoutUseCase), jadi jangan tempel lagi variantLabelSnapshot di sini —
+                // itu yang menyebabkan nama tampil dobel, mis. "baju hem (L hitam) (L hitam)".
                 itemId = item.id,
-                label = item.productNameSnapshot + (item.variantLabelSnapshot?.let { " ($it)" } ?: ""),
+                label = item.productNameSnapshot,
                 initialQuantity = item.quantity,
                 initialPrice = item.priceSnapshot,
                 initialDiscount = item.itemDiscount
@@ -374,49 +377,58 @@ private fun TransactionDetailDialog(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                // Footer disusun bertumpuk (bukan satu Row sempit) supaya tombol "Simpan
+                // Koreksi" selalu punya ruang penuh selebar dialog dan teksnya tidak
+                // terpotong jadi beberapa baris ("Simp/an/Kore/ksi") di layar sempit.
+                Column(Modifier.fillMaxWidth()) {
                     if (isAdmin) {
-                        TextButton(onClick = onDeleteRequest, enabled = !detail.isSaving) {
+                        TextButton(
+                            onClick = onDeleteRequest,
+                            enabled = !detail.isSaving,
+                            modifier = Modifier.align(Alignment.Start)
+                        ) {
                             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                             Spacer(Modifier.width(4.dp))
                             Text("Hapus Transaksi", color = MaterialTheme.colorScheme.error)
                         }
-                    } else {
-                        Spacer(Modifier.width(1.dp))
+                        Spacer(Modifier.height(8.dp))
                     }
-                    Row {
-                    TextButton(onClick = onDismiss) { Text(if (isAdmin) "Batal" else "Tutup") }
-                    if (isAdmin) {
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val updatedItems = detail.items.mapNotNull { original ->
-                                    val edited = editableItems.find { it.itemId == original.id } ?: return@mapNotNull null
-                                    if (edited.deleted) null
-                                    else original.copy(
-                                        quantity = (edited.quantity.toIntOrNull() ?: 1).coerceAtLeast(1),
-                                        priceSnapshot = edited.price.toDoubleOrNull() ?: original.priceSnapshot,
-                                        itemDiscount = edited.discount.toDoubleOrNull() ?: 0.0
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onDismiss) { Text(if (isAdmin) "Batal" else "Tutup") }
+                        if (isAdmin) {
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val updatedItems = detail.items.mapNotNull { original ->
+                                        val edited = editableItems.find { it.itemId == original.id } ?: return@mapNotNull null
+                                        if (edited.deleted) null
+                                        else original.copy(
+                                            quantity = (edited.quantity.toIntOrNull() ?: 1).coerceAtLeast(1),
+                                            priceSnapshot = edited.price.toDoubleOrNull() ?: original.priceSnapshot,
+                                            itemDiscount = edited.discount.toDoubleOrNull() ?: 0.0
+                                        )
+                                    }
+                                    val deletedIds = editableItems.filter { it.deleted }.map { it.itemId }
+                                    val updatedTransaction = transaction.copy(
+                                        subtotal = subtotal,
+                                        taxAmount = taxAmount,
+                                        total = total,
+                                        note = note.ifBlank { null }
                                     )
-                                }
-                                val deletedIds = editableItems.filter { it.deleted }.map { it.itemId }
-                                val updatedTransaction = transaction.copy(
-                                    subtotal = subtotal,
-                                    taxAmount = taxAmount,
-                                    total = total,
-                                    note = note.ifBlank { null }
+                                    onSave(updatedTransaction, updatedItems, deletedIds)
+                                },
+                                enabled = !detail.isSaving && remainingCount > 0
+                            ) {
+                                Text(
+                                    if (detail.isSaving) "Menyimpan..." else "Simpan Koreksi",
+                                    maxLines = 1
                                 )
-                                onSave(updatedTransaction, updatedItems, deletedIds)
-                            },
-                            enabled = !detail.isSaving && remainingCount > 0
-                        ) {
-                            Text(if (detail.isSaving) "Menyimpan..." else "Simpan Koreksi")
+                            }
                         }
-                    }
                     }
                 }
             }
