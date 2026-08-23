@@ -1,5 +1,6 @@
 package com.example.posapp.presentation.report
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,19 +55,22 @@ fun ReportScreen(
                 SummaryCard(
                     modifier = Modifier.weight(1f),
                     label = "Total Omzet",
-                    value = rupiah.format(uiState.summary.totalRevenue)
+                    value = rupiah.format(uiState.summary.totalRevenue),
+                    accent = MaterialTheme.colorScheme.primary
                 )
                 SummaryCard(
                     modifier = Modifier.weight(1f),
                     label = "Laba Kotor",
-                    value = rupiah.format(uiState.summary.totalGrossProfit)
+                    value = rupiah.format(uiState.summary.totalGrossProfit),
+                    accent = MaterialTheme.colorScheme.tertiary
                 )
             }
             Spacer(Modifier.height(8.dp))
             SummaryCard(
                 modifier = Modifier.fillMaxWidth(),
                 label = "Jumlah Transaksi",
-                value = "${uiState.summary.totalTransactions}"
+                value = "${uiState.summary.totalTransactions}",
+                accent = MaterialTheme.colorScheme.secondary
             )
 
             Spacer(Modifier.height(24.dp))
@@ -104,9 +108,16 @@ private fun PresetChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SummaryCard(modifier: Modifier = Modifier, label: String, value: String) {
-    Card(modifier = modifier) {
+private fun SummaryCard(modifier: Modifier = Modifier, label: String, value: String, accent: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary) {
+    Card(modifier = modifier, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.padding(16.dp)) {
+            Box(
+                Modifier
+                    .width(28.dp)
+                    .height(3.dp)
+                    .background(accent, shape = MaterialTheme.shapes.extraSmall)
+            )
+            Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

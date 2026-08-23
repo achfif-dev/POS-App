@@ -20,6 +20,7 @@ data class TransactionEntity(
     val amountPaid: Double,
     val changeAmount: Double,
     val note: String? = null,
+    val cashierName: String? = null, // snapshot nama kasir yang login saat transaksi (fitur multi-user)
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -45,6 +46,8 @@ data class TransactionItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val transactionId: Long,
     val productId: Long,
+    val variantId: Long? = null,        // diisi bila item merupakan kombinasi varian tertentu
+    val variantLabelSnapshot: String? = null,
     val productNameSnapshot: String, // simpan snapshot nama & harga saat transaksi
     val priceSnapshot: Double,
     val quantity: Int,

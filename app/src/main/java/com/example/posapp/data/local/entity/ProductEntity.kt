@@ -27,7 +27,8 @@ data class ProductEntity(
     val stock: Int,
     val lowStockThreshold: Int = 5, // ambang batas alert stok tipis
     val photoPath: String? = null,  // path foto lokal di internal storage
-    val variantName: String? = null,   // mis. "Ukuran L / Warna Merah"
+    val variantName: String? = null,   // label bebas (dipakai jika produk TIDAK punya matrix varian)
+    val hasVariants: Boolean = false,  // true = kelola stok lewat ProductVariantEntity (matrix Ukuran x Warna)
     val discountPercent: Double = 0.0, // diskon produk permanen (%)
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),

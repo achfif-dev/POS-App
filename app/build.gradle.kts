@@ -99,8 +99,11 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Coil for local product photos
+    // Coil for local product photos & QRIS image
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // DataStore (profil toko, preferensi login PIN, dsb.)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

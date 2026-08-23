@@ -28,11 +28,15 @@ class CheckoutUseCase @Inject constructor(
         cart: Cart,
         paymentMethod: PaymentMethod,
         amountPaid: Double,
-        note: String? = null
+        note: String? = null,
+        cashierName: String? = null
     ): CheckoutResult {
         if (cart.isEmpty) return CheckoutResult.Error("Keranjang masih kosong")
         if (paymentMethod == PaymentMethod.CASH && amountPaid < cart.total) {
             return CheckoutResult.Error("Jumlah pembayaran kurang dari total")
+        }
+        cart.lines.firstOrNull { it.quantity > it.availableStock }?.let { line ->
+            return CheckoutResult.Error("Stok ${line.product.name}${line.variant?.let { " (${it.variantLabel})" } ?: ""} tidak mencukupi")
         }
 
         val invoiceNumber = generateInvoiceNumber()
@@ -48,15 +52,18 @@ class CheckoutUseCase @Inject constructor(
             paymentMethod = paymentMethod,
             amountPaid = amountPaid,
             changeAmount = change,
-            note = note
+            note = note,
+            cashierName = cashierName
         )
 
         val items = cart.lines.map { line ->
             TransactionItemEntity(
                 transactionId = 0, // di-set ulang oleh repository saat insert
                 productId = line.product.id,
-                productNameSnapshot = line.product.name,
-                priceSnapshot = line.product.sellPrice,
+                variantId = line.variant?.id,
+                variantLabelSnapshot = line.variant?.variantLabel,
+                productNameSnapshot = line.product.name + (line.variant?.let { " (${it.variantLabel})" } ?: ""),
+                priceSnapshot = line.unitPrice,
                 quantity = line.quantity,
                 itemDiscount = line.discount,
                 itemNote = line.note

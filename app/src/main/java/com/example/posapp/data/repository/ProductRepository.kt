@@ -1,8 +1,10 @@
 package com.example.posapp.data.repository
 
 import com.example.posapp.data.local.dao.ProductDao
+import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -11,7 +13,8 @@ import javax.inject.Singleton
 @Singleton
 class ProductRepository @Inject constructor(
     private val productDao: ProductDao,
-    private val stockAdjustmentDao: StockAdjustmentDao
+    private val stockAdjustmentDao: StockAdjustmentDao,
+    private val productVariantDao: ProductVariantDao
 ) {
     fun observeAll(): Flow<List<ProductEntity>> = productDao.observeAll()
 
@@ -47,4 +50,26 @@ class ProductRepository @Inject constructor(
     }
 
     suspend fun getAllForExport(): List<ProductEntity> = productDao.getAllForExport()
+
+    // --- Varian produk (matrix Ukuran x Warna dengan stok terpisah) ---
+
+    fun observeVariants(productId: Long): Flow<List<ProductVariantEntity>> =
+        productVariantDao.observeForProduct(productId)
+
+    suspend fun getVariants(productId: Long): List<ProductVariantEntity> =
+        productVariantDao.getForProduct(productId)
+
+    suspend fun findVariantBySku(sku: String): ProductVariantEntity? =
+        productVariantDao.findBySku(sku)
+
+    suspend fun upsertVariant(variant: ProductVariantEntity): Long =
+        if (variant.id == 0L) productVariantDao.insert(variant) else {
+            productVariantDao.update(variant); variant.id
+        }
+
+    suspend fun deleteVariant(id: Long) = productVariantDao.softDelete(id)
+
+    suspend fun decreaseVariantStock(variantId: Long, qty: Int) = productVariantDao.decreaseStock(variantId, qty)
+
+    suspend fun increaseVariantStock(variantId: Long, qty: Int) = productVariantDao.increaseStock(variantId, qty)
 }

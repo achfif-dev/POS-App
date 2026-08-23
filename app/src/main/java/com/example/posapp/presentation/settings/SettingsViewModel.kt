@@ -10,7 +10,10 @@ import com.example.posapp.data.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,10 +36,24 @@ class SettingsViewModel @Inject constructor(
     private val _events = MutableSharedFlow<SettingsEvent>()
     val events: SharedFlow<SettingsEvent> = _events
 
+    private val _backups = MutableStateFlow<List<File>>(emptyList())
+    val backups: StateFlow<List<File>> = _backups.asStateFlow()
+
+    init {
+        refreshBackups()
+    }
+
+    private fun refreshBackups() {
+        _backups.value = backupRepository.listLocalBackups()
+    }
+
     fun backupNow() {
         viewModelScope.launch {
             when (val result = withContext(Dispatchers.IO) { backupRepository.backup() }) {
-                is BackupResult.Success -> _events.emit(SettingsEvent.ExportReady(result.file, "application/octet-stream"))
+                is BackupResult.Success -> {
+                    refreshBackups()
+                    _events.emit(SettingsEvent.ExportReady(result.file, "application/octet-stream"))
+                }
                 is BackupResult.Error -> _events.emit(SettingsEvent.ShowMessage(result.message))
             }
         }

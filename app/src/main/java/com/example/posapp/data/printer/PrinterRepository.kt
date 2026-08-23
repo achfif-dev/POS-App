@@ -59,7 +59,9 @@ class PrinterRepository @Inject constructor(
     fun printReceipt(
         storeName: String,
         transaction: TransactionEntity,
-        items: List<TransactionItemEntity>
+        items: List<TransactionItemEntity>,
+        storeAddress: String = "",
+        receiptFooter: String = "Terima kasih!"
     ): PrintResult {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
@@ -76,6 +78,7 @@ class PrinterRepository @Inject constructor(
 
             val sb = StringBuilder()
             sb.append("[C]<b>$storeName</b>\n")
+            if (storeAddress.isNotBlank()) sb.append("[C]$storeAddress\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[L]No: ${transaction.invoiceNumber}\n")
             sb.append("[L]${dateFormat.format(Date(transaction.createdAt))}\n")
@@ -95,7 +98,7 @@ class PrinterRepository @Inject constructor(
             sb.append("[L]Bayar (${paymentLabel(transaction.paymentMethod)})[R]${rupiah.format(transaction.amountPaid)}\n")
             sb.append("[L]Kembali[R]${rupiah.format(transaction.changeAmount)}\n")
             sb.append("[C]--------------------------------\n")
-            sb.append("[C]Terima kasih!\n")
+            sb.append("[C]$receiptFooter\n")
             sb.append("[L]\n")
 
             printer.printFormattedTextAndCut(sb.toString())

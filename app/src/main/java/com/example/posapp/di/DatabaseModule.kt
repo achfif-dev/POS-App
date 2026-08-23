@@ -5,8 +5,10 @@ import androidx.room.Room
 import com.example.posapp.data.local.AppDatabase
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.ProductDao
+import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.TransactionDao
+import com.example.posapp.data.local.dao.UserDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,4 +41,10 @@ object DatabaseModule {
 
     @Provides
     fun provideStockAdjustmentDao(db: AppDatabase): StockAdjustmentDao = db.stockAdjustmentDao()
+
+    @Provides
+    fun provideProductVariantDao(db: AppDatabase): ProductVariantDao = db.productVariantDao()
+
+    @Provides
+    fun provideUserDao(db: AppDatabase): UserDao = db.userDao()
 }

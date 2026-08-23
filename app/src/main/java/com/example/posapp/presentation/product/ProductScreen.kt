@@ -3,12 +3,15 @@ package com.example.posapp.presentation.product
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +22,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -35,14 +39,17 @@ fun ProductScreen(
     var formState by remember { mutableStateOf<ProductFormState?>(null) }
     var showCategoryDialog by remember { mutableStateOf(false) }
     var productPendingDelete by remember { mutableStateOf<ProductEntity?>(null) }
+    var variantManagerProductId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ProductEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
-                ProductEvent.SavedSuccessfully -> {
+                is ProductEvent.SavedSuccessfully -> {
+                    val wasNewWithVariants = formState?.productId == null && formState?.hasVariants == true
                     formState = null
                     snackbarHostState.showSnackbar("Produk tersimpan")
+                    if (wasNewWithVariants) variantManagerProductId = event.productId
                 }
             }
         }
@@ -76,7 +83,8 @@ fun ProductScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Cari nama atau SKU...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true
+                singleLine = true,
+                shape = MaterialTheme.shapes.large
             )
             Spacer(Modifier.height(8.dp))
 
@@ -102,9 +110,11 @@ fun ProductScreen(
                                     stock = product.stock.toString(),
                                     lowStockThreshold = product.lowStockThreshold.toString(),
                                     discountPercent = product.discountPercent.toString(),
-                                    variantName = product.variantName.orEmpty()
+                                    variantName = product.variantName.orEmpty(),
+                                    hasVariants = product.hasVariants
                                 )
                             },
+                            onManageVariants = { variantManagerProductId = product.id },
                             onDelete = { productPendingDelete = product }
                         )
                         HorizontalDivider()
@@ -133,6 +143,16 @@ fun ProductScreen(
         )
     }
 
+    variantManagerProductId?.let { productId ->
+        val product = uiState.products.find { it.id == productId }
+        VariantManagerDialog(
+            productId = productId,
+            productName = product?.name ?: "",
+            viewModel = viewModel,
+            onDismiss = { variantManagerProductId = null }
+        )
+    }
+
     productPendingDelete?.let { product ->
         AlertDialog(
             onDismissRequest = { productPendingDelete = null },
@@ -156,6 +176,7 @@ private fun ProductRow(
     product: ProductEntity,
     categoryName: String?,
     onEdit: () -> Unit,
+    onManageVariants: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
@@ -172,10 +193,17 @@ private fun ProductRow(
             Row {
                 Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.width(12.dp))
-                val stockColor = if (product.stock <= product.lowStockThreshold)
-                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
+                if (product.hasVariants) {
+                    Text("Punya varian", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    val stockColor = if (product.stock <= product.lowStockThreshold)
+                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
+                }
             }
+        }
+        if (product.hasVariants) {
+            IconButton(onClick = onManageVariants) { Icon(Icons.Default.Style, contentDescription = "Kelola Varian") }
         }
         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Hapus") }
@@ -200,6 +228,7 @@ private fun ProductFormDialog(
                 Modifier
                     .padding(20.dp)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     if (form.productId == null) "Tambah Produk" else "Edit Produk",
@@ -271,22 +300,51 @@ private fun ProductFormDialog(
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
-                Row {
-                    OutlinedTextField(
-                        value = state.stock,
-                        onValueChange = { state = state.copy(stock = it.filter { c -> c.isDigit() }) },
-                        label = { Text("Stok") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Produk Punya Varian", fontWeight = FontWeight.Medium)
+                        Text(
+                            "Stok dikelola per kombinasi (mis. Ukuran x Warna)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.hasVariants,
+                        onCheckedChange = { state = state.copy(hasVariants = it) }
                     )
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = state.lowStockThreshold,
-                        onValueChange = { state = state.copy(lowStockThreshold = it.filter { c -> c.isDigit() }) },
-                        label = { Text("Alert Stok Tipis") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                }
+
+                if (!state.hasVariants) {
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        OutlinedTextField(
+                            value = state.stock,
+                            onValueChange = { state = state.copy(stock = it.filter { c -> c.isDigit() }) },
+                            label = { Text("Stok") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = state.lowStockThreshold,
+                            onValueChange = { state = state.copy(lowStockThreshold = it.filter { c -> c.isDigit() }) },
+                            label = { Text("Alert Stok Tipis") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (form.productId == null) "Anda bisa menambahkan kombinasi varian setelah produk disimpan."
+                        else "Kelola stok tiap kombinasi lewat tombol ikon varian di daftar produk.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -303,7 +361,7 @@ private fun ProductFormDialog(
                     OutlinedTextField(
                         value = state.variantName,
                         onValueChange = { state = state.copy(variantName = it) },
-                        label = { Text("Varian (opsional)") },
+                        label = { Text("Label (opsional)") },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -369,4 +427,169 @@ private fun CategoryManagerDialog(
             TextButton(onClick = onDismiss) { Text("Tutup") }
         }
     )
+}
+
+/** Dialog kelola varian (matrix Ukuran x Warna) untuk satu produk: tambah/edit/hapus kombinasi. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VariantManagerDialog(
+    productId: Long,
+    productName: String,
+    viewModel: ProductViewModel,
+    onDismiss: () -> Unit
+) {
+    val variants by viewModel.observeVariants(productId).collectAsState(initial = emptyList())
+    var editingVariant by remember { mutableStateOf<ProductVariantEntity?>(null) }
+    var showAddForm by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(20.dp).fillMaxWidth().heightIn(max = 500.dp)) {
+                Text("Varian: $productName", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Setiap kombinasi punya SKU & stok sendiri",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (variants.isEmpty() && !showAddForm) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        Text("Belum ada varian", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                        items(variants, key = { it.id }) { variant ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(variant.variantLabel, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "SKU: ${variant.sku} · Stok: ${variant.stock}" +
+                                            (variant.priceOverride?.let { " · ${rupiah.format(it)}" } ?: ""),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = { editingVariant = variant }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit varian")
+                                }
+                                IconButton(onClick = { viewModel.deleteVariant(variant.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Hapus varian")
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                if (showAddForm) {
+                    VariantForm(
+                        initial = null,
+                        onCancel = { showAddForm = false },
+                        onSave = { newVariant ->
+                            viewModel.saveVariant(productId, newVariant)
+                            showAddForm = false
+                        }
+                    )
+                } else {
+                    OutlinedButton(onClick = { showAddForm = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Tambah Kombinasi Varian")
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Tutup") }
+                }
+            }
+        }
+    }
+
+    editingVariant?.let { variant ->
+        Dialog(onDismissRequest = { editingVariant = null }) {
+            Surface(shape = MaterialTheme.shapes.large) {
+                Column(Modifier.padding(20.dp).fillMaxWidth()) {
+                    Text("Edit Varian", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(12.dp))
+                    VariantForm(
+                        initial = variant,
+                        onCancel = { editingVariant = null },
+                        onSave = { updated ->
+                            viewModel.saveVariant(productId, updated)
+                            editingVariant = null
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VariantForm(
+    initial: ProductVariantEntity?,
+    onCancel: () -> Unit,
+    onSave: (ProductVariantEntity) -> Unit
+) {
+    var label by remember { mutableStateOf(initial?.variantLabel ?: "") }
+    var sku by remember { mutableStateOf(initial?.sku ?: "") }
+    var stock by remember { mutableStateOf(initial?.stock?.toString() ?: "") }
+    var priceOverride by remember { mutableStateOf(initial?.priceOverride?.toString() ?: "") }
+
+    Column {
+        OutlinedTextField(
+            value = label, onValueChange = { label = it },
+            label = { Text("Label (mis. Merah / L)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = sku, onValueChange = { sku = it },
+            label = { Text("SKU / Barcode") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+        )
+        Spacer(Modifier.height(8.dp))
+        Row {
+            OutlinedTextField(
+                value = stock,
+                onValueChange = { stock = it.filter { c -> c.isDigit() } },
+                label = { Text("Stok") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = priceOverride,
+                onValueChange = { priceOverride = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Harga Khusus (opsional)") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onCancel) { Text("Batal") }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    onSave(
+                        ProductVariantEntity(
+                            id = initial?.id ?: 0L,
+                            productId = initial?.productId ?: 0L,
+                            variantLabel = label.trim(),
+                            sku = sku.trim(),
+                            stock = stock.toIntOrNull() ?: 0,
+                            priceOverride = priceOverride.toDoubleOrNull()
+                        )
+                    )
+                },
+                enabled = label.isNotBlank() && sku.isNotBlank()
+            ) { Text("Simpan") }
+        }
+    }
 }

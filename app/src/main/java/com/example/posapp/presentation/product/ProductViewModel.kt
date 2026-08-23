@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.ProductRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,13 +29,14 @@ data class ProductFormState(
     val stock: String = "",
     val lowStockThreshold: String = "5",
     val discountPercent: String = "0",
-    val variantName: String = ""
+    val variantName: String = "",
+    val hasVariants: Boolean = false
 ) {
     val isValid: Boolean
         get() = name.isNotBlank() && sku.isNotBlank() &&
             purchasePrice.toDoubleOrNull() != null &&
             sellPrice.toDoubleOrNull() != null &&
-            stock.toIntOrNull() != null
+            (hasVariants || stock.toIntOrNull() != null)
 }
 
 data class ProductUiState(
@@ -46,7 +48,7 @@ data class ProductUiState(
 
 sealed class ProductEvent {
     data class ShowMessage(val message: String) : ProductEvent()
-    object SavedSuccessfully : ProductEvent()
+    data class SavedSuccessfully(val productId: Long) : ProductEvent()
 }
 
 @HiltViewModel
@@ -92,16 +94,17 @@ class ProductViewModel @Inject constructor(
                     categoryId = form.categoryId,
                     purchasePrice = form.purchasePrice.toDouble(),
                     sellPrice = form.sellPrice.toDouble(),
-                    stock = form.stock.toInt(),
+                    stock = if (form.hasVariants) 0 else (form.stock.toIntOrNull() ?: 0),
                     lowStockThreshold = form.lowStockThreshold.toIntOrNull() ?: 5,
                     discountPercent = form.discountPercent.toDoubleOrNull() ?: 0.0,
                     variantName = form.variantName.ifBlank { null },
+                    hasVariants = form.hasVariants,
                     photoPath = existing?.photoPath,
                     createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 )
-                productRepository.upsert(entity)
-                _events.emit(ProductEvent.SavedSuccessfully)
+                val savedId = productRepository.upsert(entity)
+                _events.emit(ProductEvent.SavedSuccessfully(savedId))
             } catch (e: Exception) {
                 _events.emit(ProductEvent.ShowMessage(e.message ?: "SKU/Barcode mungkin sudah dipakai produk lain"))
             } finally {
@@ -126,5 +129,27 @@ class ProductViewModel @Inject constructor(
 
     fun deleteCategory(category: CategoryEntity) {
         viewModelScope.launch { categoryRepository.delete(category) }
+    }
+
+    // --- Varian produk (matrix Ukuran x Warna) ---
+
+    fun observeVariants(productId: Long) = productRepository.observeVariants(productId)
+
+    fun saveVariant(productId: Long, variant: ProductVariantEntity) {
+        viewModelScope.launch {
+            try {
+                productRepository.upsertVariant(variant.copy(productId = productId))
+                _events.emit(ProductEvent.ShowMessage("Varian tersimpan"))
+            } catch (e: Exception) {
+                _events.emit(ProductEvent.ShowMessage("Gagal menyimpan varian: SKU mungkin sudah dipakai"))
+            }
+        }
+    }
+
+    fun deleteVariant(variantId: Long) {
+        viewModelScope.launch {
+            productRepository.deleteVariant(variantId)
+            _events.emit(ProductEvent.ShowMessage("Varian dihapus"))
+        }
     }
 }

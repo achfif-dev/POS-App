@@ -33,11 +33,14 @@ class PdfInvoiceGenerator @Inject constructor(
     fun generate(
         storeName: String,
         transaction: TransactionEntity,
-        items: List<TransactionItemEntity>
+        items: List<TransactionItemEntity>,
+        storeAddress: String = "",
+        receiptFooter: String = "Terima kasih!"
     ): File {
         val pageWidth = 220
         val lineHeight = 16
-        val headerHeight = 90
+        val addressLines = if (storeAddress.isNotBlank()) 1 else 0
+        val headerHeight = 90 + (addressLines * 12)
         val footerHeight = 70
         val pageHeight = headerHeight + (items.size * lineHeight) + footerHeight + 60
 
@@ -48,12 +51,17 @@ class PdfInvoiceGenerator @Inject constructor(
 
         val titlePaint = Paint().apply { textSize = 12f; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER }
         val normalPaint = Paint().apply { textSize = 9f; typeface = Typeface.DEFAULT }
+        val centerSmallPaint = Paint().apply { textSize = 8f; typeface = Typeface.DEFAULT; textAlign = Paint.Align.CENTER }
         val boldPaint = Paint().apply { textSize = 9f; typeface = Typeface.DEFAULT_BOLD }
         val rightPaint = Paint().apply { textSize = 9f; typeface = Typeface.DEFAULT; textAlign = Paint.Align.RIGHT }
 
         var y = 16f
         canvas.drawText(storeName, pageWidth / 2f, y, titlePaint)
-        y += 16f
+        y += 14f
+        if (storeAddress.isNotBlank()) {
+            canvas.drawText(storeAddress, pageWidth / 2f, y, centerSmallPaint)
+            y += 12f
+        }
         canvas.drawText("No: ${transaction.invoiceNumber}", 8f, y, normalPaint)
         y += 12f
         canvas.drawText(dateFormat.format(Date(transaction.createdAt)), 8f, y, normalPaint)
@@ -78,7 +86,7 @@ class PdfInvoiceGenerator @Inject constructor(
         drawRow(canvas, "Bayar", rupiah.format(transaction.amountPaid), y, normalPaint, rightPaint); y += 12f
         drawRow(canvas, "Kembali", rupiah.format(transaction.changeAmount), y, normalPaint, rightPaint); y += 20f
 
-        canvas.drawText("Terima kasih!", pageWidth / 2f, y, titlePaint.apply { textSize = 10f })
+        canvas.drawText(receiptFooter, pageWidth / 2f, y, titlePaint.apply { textSize = 10f })
 
         document.finishPage(page)
 

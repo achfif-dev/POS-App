@@ -2,6 +2,7 @@ package com.example.posapp.data.repository
 
 import com.example.posapp.data.local.dao.DailySalesSummary
 import com.example.posapp.data.local.dao.ProductDao
+import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.TopSellingItem
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.entity.TransactionEntity
@@ -13,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class TransactionRepository @Inject constructor(
     private val transactionDao: TransactionDao,
-    private val productDao: ProductDao
+    private val productDao: ProductDao,
+    private val productVariantDao: ProductVariantDao
 ) {
     fun observeAll(): Flow<List<TransactionEntity>> = transactionDao.observeAll()
 
@@ -39,7 +41,11 @@ class TransactionRepository @Inject constructor(
     suspend fun checkout(transaction: TransactionEntity, items: List<TransactionItemEntity>): Long {
         val txId = transactionDao.insertFullTransaction(transaction, items)
         items.forEach { item ->
-            productDao.decreaseStock(item.productId, item.quantity)
+            if (item.variantId != null) {
+                productVariantDao.decreaseStock(item.variantId, item.quantity)
+            } else {
+                productDao.decreaseStock(item.productId, item.quantity)
+            }
         }
         return txId
     }

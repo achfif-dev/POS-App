@@ -1,15 +1,25 @@
 package com.example.posapp.domain.model
 
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
 
 data class CartLine(
     val product: ProductEntity,
+    val variant: ProductVariantEntity? = null, // diisi bila produk punya matrix varian
     val quantity: Int = 1,
     val discount: Double = 0.0,
     val note: String? = null
 ) {
+    /** Kunci unik baris di keranjang: kombinasi produk + varian (bila ada). */
+    val lineKey: String get() = "${product.id}:${variant?.id ?: 0}"
+
+    val unitPrice: Double get() = variant?.priceOverride ?: product.sellPrice
+
     val lineTotal: Double
-        get() = (product.sellPrice * quantity) - discount
+        get() = (unitPrice * quantity) - discount
+
+    /** Stok yang relevan untuk validasi keranjang: stok varian jika ada, atau stok produk. */
+    val availableStock: Int get() = variant?.stock ?: product.stock
 }
 
 data class Cart(

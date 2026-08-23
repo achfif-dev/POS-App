@@ -10,7 +10,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -19,12 +21,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.domain.model.Cart
@@ -42,6 +47,7 @@ fun PosScreen(
     onOpenReports: () -> Unit = {},
     onOpenStock: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onLogout: () -> Unit = {},
     scannedSku: String? = null,
     onScannedSkuConsumed: () -> Unit = {}
 ) {
@@ -50,6 +56,7 @@ fun PosScreen(
     val lastReceipt by viewModel.lastReceipt.collectAsState()
     var showPaymentSheet by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -97,7 +104,14 @@ fun PosScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Kasir") },
+                title = {
+                    Column {
+                        Text("Kasir")
+                        uiState.cashierName?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
                 actions = {
                     TextButton(onClick = onOpenProducts) { Text("Produk") }
                     IconButton(onClick = { showMenu = true }) {
@@ -107,6 +121,14 @@ fun PosScreen(
                         DropdownMenuItem(text = { Text("Stok & Inventaris") }, onClick = { showMenu = false; onOpenStock() })
                         DropdownMenuItem(text = { Text("Laporan Penjualan") }, onClick = { showMenu = false; onOpenReports() })
                         DropdownMenuItem(text = { Text("Pengaturan") }, onClick = { showMenu = false; onOpenSettings() })
+                        if (uiState.cashierName != null) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Keluar (Logout)") },
+                                leadingIcon = { Icon(Icons.Default.Logout, contentDescription = null) },
+                                onClick = { showMenu = false; onLogout() }
+                            )
+                        }
                     }
                 }
             )
@@ -126,7 +148,8 @@ fun PosScreen(
                             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan")
                         }
                     },
-                    singleLine = true
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
@@ -135,7 +158,16 @@ fun PosScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.products, key = { it.id }) { product ->
-                        ProductCard(product = product, onClick = { viewModel.addToCart(product) })
+                        ProductCard(
+                            product = product,
+                            onClick = {
+                                if (product.hasVariants) {
+                                    variantPickerProduct = product
+                                } else {
+                                    viewModel.addToCart(product)
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -153,13 +185,13 @@ fun PosScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f)) {
-                        items(uiState.cart.lines, key = { it.product.id }) { line ->
+                        items(uiState.cart.lines, key = { it.lineKey }) { line ->
                             CartLineRow(
-                                name = line.product.name,
-                                price = line.product.sellPrice,
+                                name = line.product.name + (line.variant?.let { " (${it.variantLabel})" } ?: ""),
+                                price = line.unitPrice,
                                 quantity = line.quantity,
-                                onIncrease = { viewModel.updateQuantity(line.product.id, line.quantity + 1) },
-                                onDecrease = { viewModel.updateQuantity(line.product.id, line.quantity - 1) }
+                                onIncrease = { viewModel.updateQuantity(line.lineKey, line.quantity + 1) },
+                                onDecrease = { viewModel.updateQuantity(line.lineKey, line.quantity - 1) }
                             )
                         }
                     }
@@ -171,6 +203,7 @@ fun PosScreen(
                 Button(
                     onClick = { showPaymentSheet = true },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
                     enabled = !uiState.cart.isEmpty && !uiState.isProcessing
                 ) {
                     Text("Bayar (${rupiah.format(uiState.cart.total)})")
@@ -179,9 +212,22 @@ fun PosScreen(
         }
     }
 
+    variantPickerProduct?.let { product ->
+        VariantPickerSheet(
+            product = product,
+            viewModel = viewModel,
+            onDismiss = { variantPickerProduct = null },
+            onVariantSelected = { variant ->
+                viewModel.addToCart(product, variant)
+                variantPickerProduct = null
+            }
+        )
+    }
+
     if (showPaymentSheet) {
         PaymentModal(
             cart = uiState.cart,
+            qrisImagePath = uiState.storeProfile.qrisImagePath,
             isProcessing = uiState.isProcessing,
             onDismiss = { showPaymentSheet = false },
             onConfirm = { method, amountPaid -> viewModel.checkout(method, amountPaid) }
@@ -196,6 +242,65 @@ fun PosScreen(
             onPrint = { requestPrint() },
             onExportPdf = { viewModel.exportReceiptPdf() }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VariantPickerSheet(
+    product: ProductEntity,
+    viewModel: PosViewModel,
+    onDismiss: () -> Unit,
+    onVariantSelected: (ProductVariantEntity) -> Unit
+) {
+    var variants by remember { mutableStateOf<List<ProductVariantEntity>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(product.id) {
+        variants = viewModel.getVariantsFor(product.id)
+        isLoading = false
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(16.dp).fillMaxWidth()) {
+            Text(product.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text("Pilih varian", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(16.dp))
+
+            if (isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else if (variants.isEmpty()) {
+                Text("Belum ada varian untuk produk ini.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                variants.forEach { variant ->
+                    val outOfStock = variant.stock <= 0
+                    Card(
+                        onClick = { if (!outOfStock) onVariantSelected(variant) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(variant.variantLabel, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    rupiah.format(variant.priceOverride ?: product.sellPrice),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Text(
+                                if (outOfStock) "Stok habis" else "Stok: ${variant.stock}",
+                                color = if (outOfStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -242,15 +347,19 @@ private fun ReceiptDialog(
 
 @Composable
 private fun ProductCard(product: ProductEntity, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
         Column(Modifier.padding(12.dp)) {
             Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
             Spacer(Modifier.height(4.dp))
             Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(2.dp))
-            val stockColor = if (product.stock <= product.lowStockThreshold)
-                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+            if (product.hasVariants) {
+                Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            } else {
+                val stockColor = if (product.stock <= product.lowStockThreshold)
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+            }
         }
     }
 }
@@ -304,6 +413,7 @@ private fun SummaryRow(label: String, value: String, emphasize: Boolean = false)
 @Composable
 private fun PaymentModal(
     cart: Cart,
+    qrisImagePath: String?,
     isProcessing: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (PaymentMethod, Double) -> Unit
@@ -324,6 +434,26 @@ private fun PaymentModal(
                 onSelect = { selectedMethod = it }
             )
 
+            if (selectedMethod == PaymentMethod.QRIS) {
+                Spacer(Modifier.height(16.dp))
+                if (qrisImagePath != null) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            model = qrisImagePath,
+                            contentDescription = "Kode QRIS",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(220.dp)
+                        )
+                    }
+                } else {
+                    Text(
+                        "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = amountPaidText,
@@ -340,6 +470,7 @@ private fun PaymentModal(
                     onConfirm(selectedMethod, amount)
                 },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
                 enabled = !isProcessing
             ) {
                 Text(if (isProcessing) "Memproses..." else "Konfirmasi Pembayaran")
