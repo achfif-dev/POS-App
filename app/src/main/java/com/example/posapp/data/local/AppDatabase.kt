@@ -17,6 +17,7 @@ import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.local.entity.TransactionPaymentEntity
 import com.example.posapp.data.local.entity.UserEntity
 import com.example.posapp.data.local.entity.UserRole
 
@@ -42,9 +43,10 @@ class Converters {
         TransactionItemEntity::class,
         StockAdjustmentEntity::class,
         ProductVariantEntity::class,
-        UserEntity::class
+        UserEntity::class,
+        TransactionPaymentEntity::class
     ],
-    version = 2,
+    version = 3, // v3: tambah tabel transaction_payments (split/multi pembayaran)
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)

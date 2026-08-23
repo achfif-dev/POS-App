@@ -5,7 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS }
+enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS, MIXED } // MIXED = split payment (>1 metode dalam satu transaksi)
 
 @Entity(tableName = "transactions")
 data class TransactionEntity(
@@ -57,6 +57,26 @@ data class TransactionItemEntity(
     val lineTotal: Double
         get() = (priceSnapshot * quantity) - itemDiscount
 }
+
+/** Rincian per-metode pembayaran untuk satu transaksi (mendukung split/multi-pembayaran). */
+@Entity(
+    tableName = "transaction_payments",
+    foreignKeys = [
+        ForeignKey(
+            entity = TransactionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["transactionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("transactionId")]
+)
+data class TransactionPaymentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val transactionId: Long,
+    val method: PaymentMethod,
+    val amount: Double
+)
 
 @Entity(
     tableName = "stock_adjustments",

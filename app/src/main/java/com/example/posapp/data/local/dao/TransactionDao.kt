@@ -3,6 +3,7 @@ package com.example.posapp.data.local.dao
 import androidx.room.*
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.local.entity.TransactionPaymentEntity
 import kotlinx.coroutines.flow.Flow
 
 data class DailySalesSummary(
@@ -30,13 +31,23 @@ interface TransactionDao {
     @Insert
     suspend fun insertItems(items: List<TransactionItemEntity>)
 
+    @Insert
+    suspend fun insertPayments(payments: List<TransactionPaymentEntity>)
+
+    @Query("SELECT * FROM transaction_payments WHERE transactionId = :transactionId")
+    suspend fun getPayments(transactionId: Long): List<TransactionPaymentEntity>
+
     @Transaction
     suspend fun insertFullTransaction(
         transaction: TransactionEntity,
-        items: List<TransactionItemEntity>
+        items: List<TransactionItemEntity>,
+        payments: List<TransactionPaymentEntity> = emptyList()
     ): Long {
         val txId = insertTransaction(transaction)
         insertItems(items.map { it.copy(transactionId = txId) })
+        if (payments.isNotEmpty()) {
+            insertPayments(payments.map { it.copy(transactionId = txId) })
+        }
         return txId
     }
 

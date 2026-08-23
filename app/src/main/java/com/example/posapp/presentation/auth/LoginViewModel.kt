@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.repository.UserRepository
+import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,8 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val storeProfileRepository: StoreProfileRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -60,12 +62,16 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             if (_uiState.value.isFirstRun) {
-                val id = userRepository.createUser("Admin", pin, UserRole.ADMIN)
-                sessionManager.login(
-                    com.example.posapp.data.local.entity.UserEntity(
-                        id = id, name = "Admin", pinHash = "", role = UserRole.ADMIN
-                    )
-                )
+                userRepository.createUser("Admin", pin, UserRole.ADMIN)
+                // Ambil kembali entity yang baru dibuat (dengan pinHash yang benar) alih-alih
+                // memakai entity kosong, supaya sesi login konsisten dengan data di database.
+                val createdUser = userRepository.login(pin)
+                if (createdUser != null) {
+                    sessionManager.login(createdUser)
+                    // Admin pertama sudah dibuat -> aktifkan proteksi PIN secara otomatis
+                    // supaya aplikasi benar-benar meminta login di pembukaan berikutnya.
+                    storeProfileRepository.setPinLoginEnabled(true)
+                }
                 _uiState.value = _uiState.value.copy(isLoading = false, loginSuccess = true)
             } else {
                 val user = userRepository.login(pin)

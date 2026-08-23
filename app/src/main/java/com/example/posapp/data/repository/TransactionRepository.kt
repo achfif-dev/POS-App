@@ -7,6 +7,7 @@ import com.example.posapp.data.local.dao.TopSellingItem
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.local.entity.TransactionPaymentEntity
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,12 +35,20 @@ class TransactionRepository @Inject constructor(
         return transaction to items
     }
 
+    suspend fun getPayments(transactionId: Long): List<TransactionPaymentEntity> =
+        transactionDao.getPayments(transactionId)
+
     /**
-     * Menyimpan transaksi + item-nya secara atomik, lalu mengurangi stok tiap produk.
-     * Dipanggil oleh CheckoutUseCase agar 1 checkout = 1 operasi konsisten.
+     * Menyimpan transaksi + item-nya (+ rincian split pembayaran bila ada) secara atomik,
+     * lalu mengurangi stok tiap produk. Dipanggil oleh CheckoutUseCase agar 1 checkout = 1
+     * operasi konsisten.
      */
-    suspend fun checkout(transaction: TransactionEntity, items: List<TransactionItemEntity>): Long {
-        val txId = transactionDao.insertFullTransaction(transaction, items)
+    suspend fun checkout(
+        transaction: TransactionEntity,
+        items: List<TransactionItemEntity>,
+        payments: List<TransactionPaymentEntity> = emptyList()
+    ): Long {
+        val txId = transactionDao.insertFullTransaction(transaction, items, payments)
         items.forEach { item ->
             if (item.variantId != null) {
                 productVariantDao.decreaseStock(item.variantId, item.quantity)

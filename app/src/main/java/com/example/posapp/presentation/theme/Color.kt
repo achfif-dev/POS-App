@@ -2,23 +2,23 @@ package com.example.posapp.presentation.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Palet modern minimalis — netral dengan satu aksen (teal-ish blue) untuk aksi utama.
-// Dipilih agar nyaman dipakai lama di kasir (kontras tinggi, tidak melelahkan mata).
+// Palet modern & berwarna — aksen oranye hangat (khas aplikasi kasir/retail) dipadu
+// ungu-biru untuk elemen sekunder, tetap kontras tinggi agar nyaman dipakai lama.
 
-val PosPrimaryLight = Color(0xFF0F6E5C)      // Aksen utama — tombol bayar, FAB, highlight
+val PosPrimaryLight = Color(0xFFE8590C)      // Aksen utama — tombol bayar, FAB, highlight
 val PosOnPrimaryLight = Color(0xFFFFFFFF)
-val PosPrimaryContainerLight = Color(0xFFB0F2DD)
-val PosOnPrimaryContainerLight = Color(0xFF002016)
+val PosPrimaryContainerLight = Color(0xFFFFDBC7)
+val PosOnPrimaryContainerLight = Color(0xFF3A1200)
 
-val PosSecondaryLight = Color(0xFF4A6358)
+val PosSecondaryLight = Color(0xFF6750A4)
 val PosOnSecondaryLight = Color(0xFFFFFFFF)
-val PosSecondaryContainerLight = Color(0xFFCCE8DA)
-val PosOnSecondaryContainerLight = Color(0xFF072016)
+val PosSecondaryContainerLight = Color(0xFFE9DDFF)
+val PosOnSecondaryContainerLight = Color(0xFF22005D)
 
-val PosTertiaryLight = Color(0xFF3D6373)      // Info sekunder / chip kategori
+val PosTertiaryLight = Color(0xFF0288D1)      // Info sekunder / chip kategori
 val PosOnTertiaryLight = Color(0xFFFFFFFF)
-val PosTertiaryContainerLight = Color(0xFFC0E9FB)
-val PosOnTertiaryContainerLight = Color(0xFF001F28)
+val PosTertiaryContainerLight = Color(0xFFC7E7FF)
+val PosOnTertiaryContainerLight = Color(0xFF001E2E)
 
 val PosErrorLight = Color(0xFFBA1A1A)
 val PosOnErrorLight = Color(0xFFFFFFFF)
@@ -36,20 +36,20 @@ val PosSurfaceContainerLight = Color(0xFFEDF1EE)
 val PosSurfaceContainerHighLight = Color(0xFFE7EBE8)
 val PosSurfaceContainerLowLight = Color(0xFFF1F5F1)
 
-val PosPrimaryDark = Color(0xFF8FD6BE)
-val PosOnPrimaryDark = Color(0xFF00382C)
-val PosPrimaryContainerDark = Color(0xFF005141)
-val PosOnPrimaryContainerDark = Color(0xFFB0F2DD)
+val PosPrimaryDark = Color(0xFFFFB68C)
+val PosOnPrimaryDark = Color(0xFF5A2000)
+val PosPrimaryContainerDark = Color(0xFF7F2E00)
+val PosOnPrimaryContainerDark = Color(0xFFFFDBC7)
 
-val PosSecondaryDark = Color(0xFFB0CCBE)
-val PosOnSecondaryDark = Color(0xFF1C352A)
-val PosSecondaryContainerDark = Color(0xFF334B40)
-val PosOnSecondaryContainerDark = Color(0xFFCCE8DA)
+val PosSecondaryDark = Color(0xFFCFBDFE)
+val PosOnSecondaryDark = Color(0xFF381E72)
+val PosSecondaryContainerDark = Color(0xFF4F378A)
+val PosOnSecondaryContainerDark = Color(0xFFE9DDFF)
 
-val PosTertiaryDark = Color(0xFFA4CDDF)
-val PosOnTertiaryDark = Color(0xFF063542)
-val PosTertiaryContainerDark = Color(0xFF244C5A)
-val PosOnTertiaryContainerDark = Color(0xFFC0E9FB)
+val PosTertiaryDark = Color(0xFF87CEFF)
+val PosOnTertiaryDark = Color(0xFF003350)
+val PosTertiaryContainerDark = Color(0xFF004B71)
+val PosOnTertiaryContainerDark = Color(0xFFC7E7FF)
 
 val PosErrorDark = Color(0xFFFFB4AB)
 val PosOnErrorDark = Color(0xFF690005)

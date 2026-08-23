@@ -14,7 +14,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.posapp.data.auth.SessionManager
+import com.example.posapp.presentation.auth.AuthGateViewModel
 import com.example.posapp.presentation.auth.LoginScreen
+import com.example.posapp.presentation.dashboard.DashboardScreen
 import com.example.posapp.presentation.pos.PosScreen
 import com.example.posapp.presentation.product.ProductScreen
 import com.example.posapp.presentation.report.ReportScreen
@@ -56,10 +58,14 @@ fun PosNavHost(sessionManager: SessionManager) {
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("login_gate") {
-            // Gate sederhana: cek apakah PIN login diaktifkan, arahkan ke login atau langsung ke kasir.
+            // Gate login: tampilkan layar login jika belum ada user sama sekali (wajib setup
+            // admin pertama) ATAU jika fitur "Wajibkan Login PIN" aktif dan belum ada sesi login.
+            val authGateViewModel: AuthGateViewModel = hiltViewModel()
+            val requiresLogin by authGateViewModel.requiresLogin.collectAsState()
             val currentUser by sessionManager.currentUser.collectAsState()
-            androidx.compose.runtime.LaunchedEffect(storeProfile.pinLoginEnabled, currentUser) {
-                val target = if (storeProfile.pinLoginEnabled && currentUser == null) "login" else "pos"
+            androidx.compose.runtime.LaunchedEffect(requiresLogin, currentUser) {
+                val needsLogin = requiresLogin ?: return@LaunchedEffect // masih memuat, tunggu
+                val target = if (needsLogin && currentUser == null) "login" else "dashboard"
                 navController.navigate(target) {
                     popUpTo("login_gate") { inclusive = true }
                 }
@@ -67,8 +73,17 @@ fun PosNavHost(sessionManager: SessionManager) {
         }
         composable("login") {
             LoginScreen(onLoginSuccess = {
-                navController.navigate("pos") { popUpTo("login") { inclusive = true } }
+                navController.navigate("dashboard") { popUpTo("login") { inclusive = true } }
             })
+        }
+        composable("dashboard") {
+            DashboardScreen(
+                onOpenPos = { navController.navigate("pos") },
+                onOpenProducts = { navController.navigate("products") },
+                onOpenStock = { navController.navigate("stock") },
+                onOpenReports = { navController.navigate("reports") },
+                onOpenSettings = { navController.navigate("settings") }
+            )
         }
         composable("pos") { backStackEntry ->
             val scannedSku = backStackEntry.savedStateHandle
@@ -80,6 +95,7 @@ fun PosNavHost(sessionManager: SessionManager) {
                 onOpenReports = { navController.navigate("reports") },
                 onOpenStock = { navController.navigate("stock") },
                 onOpenSettings = { navController.navigate("settings") },
+                onOpenDashboard = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
                 onLogout = {
                     sessionManager.logout()
                     navController.navigate("login") {

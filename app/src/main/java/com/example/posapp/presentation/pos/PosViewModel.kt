@@ -20,6 +20,7 @@ import com.example.posapp.domain.model.Cart
 import com.example.posapp.domain.model.CartLine
 import com.example.posapp.domain.usecase.CheckoutResult
 import com.example.posapp.domain.usecase.CheckoutUseCase
+import com.example.posapp.domain.usecase.PaymentSplit
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -233,11 +234,11 @@ class PosViewModel @Inject constructor(
         _cart.value = Cart()
     }
 
-    fun checkout(paymentMethod: PaymentMethod, amountPaid: Double) {
+    fun checkout(payments: List<PaymentSplit>) {
         viewModelScope.launch {
             _isProcessing.value = true
             val cashierName = sessionManager.currentUser.value?.name
-            when (val result = checkoutUseCase(_cart.value, paymentMethod, amountPaid, cashierName = cashierName)) {
+            when (val result = checkoutUseCase(_cart.value, payments, cashierName = cashierName)) {
                 is CheckoutResult.Success -> {
                     _lastReceipt.value = transactionRepository.getTransactionWithItems(result.transactionId)
                     _events.emit(PosEvent.CheckoutSuccess(result.transactionId, result.invoiceNumber, result.change))

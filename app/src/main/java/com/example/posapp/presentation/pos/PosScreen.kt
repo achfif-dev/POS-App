@@ -7,9 +7,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -17,10 +20,16 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +56,7 @@ fun PosScreen(
     onOpenReports: () -> Unit = {},
     onOpenStock: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenDashboard: () -> Unit = {},
     onLogout: () -> Unit = {},
     scannedSku: String? = null,
     onScannedSkuConsumed: () -> Unit = {}
@@ -105,22 +115,47 @@ fun PosScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Kasir")
-                        uiState.cashierName?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Kasir")
+                            uiState.cashierName?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 },
                 actions = {
-                    TextButton(onClick = onOpenProducts) { Text("Produk") }
+                    TextButton(onClick = onOpenProducts) {
+                        Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Produk")
+                    }
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu lainnya")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Stok & Inventaris") }, onClick = { showMenu = false; onOpenStock() })
-                        DropdownMenuItem(text = { Text("Laporan Penjualan") }, onClick = { showMenu = false; onOpenReports() })
-                        DropdownMenuItem(text = { Text("Pengaturan") }, onClick = { showMenu = false; onOpenSettings() })
+                        DropdownMenuItem(
+                            text = { Text("Dashboard") },
+                            leadingIcon = { Icon(Icons.Default.Storefront, contentDescription = null) },
+                            onClick = { showMenu = false; onOpenDashboard() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Stok & Inventaris") },
+                            leadingIcon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
+                            onClick = { showMenu = false; onOpenStock() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Laporan Penjualan") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null) },
+                            onClick = { showMenu = false; onOpenReports() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Pengaturan") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = { showMenu = false; onOpenSettings() }
+                        )
                         if (uiState.cashierName != null) {
                             HorizontalDivider()
                             DropdownMenuItem(
@@ -230,7 +265,7 @@ fun PosScreen(
             qrisImagePath = uiState.storeProfile.qrisImagePath,
             isProcessing = uiState.isProcessing,
             onDismiss = { showPaymentSheet = false },
-            onConfirm = { method, amountPaid -> viewModel.checkout(method, amountPaid) }
+            onConfirm = { payments -> viewModel.checkout(payments) }
         )
     }
 
@@ -345,19 +380,57 @@ private fun ReceiptDialog(
     )
 }
 
+// Palet aksen berputar untuk avatar ikon produk, dipilih berdasarkan nama produk supaya
+// grid produk terlihat berwarna & mudah dibedakan sekilas, bukan flat/polos.
+private val productAccentPalette = listOf(
+    Color(0xFFE8590C), Color(0xFF6750A4), Color(0xFF0288D1),
+    Color(0xFF2E7D32), Color(0xFFC2185B), Color(0xFFF9A825)
+)
+
+private fun accentColorFor(name: String): Color =
+    productAccentPalette[(name.hashCode().let { if (it < 0) -it else it }) % productAccentPalette.size]
+
 @Composable
 private fun ProductCard(product: ProductEntity, onClick: () -> Unit) {
+    val accent = accentColorFor(product.name)
+    val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
+
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
         Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (isLowStock) {
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        Icons.Default.WarningAmber,
+                        contentDescription = "Stok tipis",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
             Spacer(Modifier.height(4.dp))
-            Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium)
+            Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, color = accent, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(2.dp))
             if (product.hasVariants) {
                 Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             } else {
-                val stockColor = if (product.stock <= product.lowStockThreshold)
-                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                 Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = stockColor)
             }
         }
@@ -409,6 +482,18 @@ private fun SummaryRow(label: String, value: String, emphasize: Boolean = false)
     }
 }
 
+private fun paymentMethodLabel(method: PaymentMethod): String = when (method) {
+    PaymentMethod.CASH -> "Cash"
+    PaymentMethod.DEBIT_CREDIT -> "Debit/Kredit"
+    PaymentMethod.QRIS -> "QRIS"
+    PaymentMethod.MIXED -> "Campuran"
+}
+
+/**
+ * Bottom sheet pembayaran dengan dukungan split/multi-metode: kasir bisa menambahkan lebih
+ * dari satu baris pembayaran (mis. sebagian Cash + sisanya QRIS) sampai totalnya menutupi
+ * total belanja, lalu konfirmasi sekali untuk seluruh transaksi.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PaymentModal(
@@ -416,62 +501,127 @@ private fun PaymentModal(
     qrisImagePath: String?,
     isProcessing: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (PaymentMethod, Double) -> Unit
+    onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>) -> Unit
 ) {
+    val payments = remember { mutableStateListOf<com.example.posapp.domain.usecase.PaymentSplit>() }
     var selectedMethod by remember { mutableStateOf(PaymentMethod.CASH) }
-    var amountPaidText by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+
+    val paidSoFar = payments.sumOf { it.amount }
+    val remaining = (cart.total - paidSoFar).coerceAtLeast(0.0)
+    val isFullyPaid = paidSoFar >= cart.total
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(16.dp).fillMaxWidth()) {
             Text("Pembayaran", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(12.dp))
-            Text("Total: ${rupiah.format(cart.total)}", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(4.dp))
+            Text("Total belanja: ${rupiah.format(cart.total)}", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
 
-            SingleChoiceSegmented(
-                options = listOf("Cash" to PaymentMethod.CASH, "Debit/Kredit" to PaymentMethod.DEBIT_CREDIT, "QRIS" to PaymentMethod.QRIS),
-                selected = selectedMethod,
-                onSelect = { selectedMethod = it }
-            )
-
-            if (selectedMethod == PaymentMethod.QRIS) {
-                Spacer(Modifier.height(16.dp))
-                if (qrisImagePath != null) {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        AsyncImage(
-                            model = qrisImagePath,
-                            contentDescription = "Kode QRIS",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(220.dp)
-                        )
+            if (payments.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth()) {
+                    payments.forEachIndexed { index, split ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AssistChip(onClick = {}, label = { Text(paymentMethodLabel(split.method)) })
+                            Spacer(Modifier.width(8.dp))
+                            Text(rupiah.format(split.amount), modifier = Modifier.weight(1f))
+                            IconButton(onClick = { payments.removeAt(index) }) {
+                                Icon(Icons.Default.Remove, contentDescription = "Hapus pembayaran ini")
+                            }
+                        }
                     }
-                } else {
-                    Text(
-                        "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = amountPaidText,
-                onValueChange = { amountPaidText = it.filter { c -> c.isDigit() } },
-                label = { Text("Jumlah dibayar") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            if (!isFullyPaid) {
+                Text(
+                    "Sisa yang harus dibayar: ${rupiah.format(remaining)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+
+                SingleChoiceSegmented(
+                    options = listOf("Cash" to PaymentMethod.CASH, "Debit/Kredit" to PaymentMethod.DEBIT_CREDIT, "QRIS" to PaymentMethod.QRIS),
+                    selected = selectedMethod,
+                    onSelect = { selectedMethod = it }
+                )
+
+                if (selectedMethod == PaymentMethod.QRIS) {
+                    Spacer(Modifier.height(16.dp))
+                    if (qrisImagePath != null) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = qrisImagePath,
+                                contentDescription = "Kode QRIS",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(200.dp)
+                            )
+                        }
+                    } else {
+                        Text(
+                            "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it.filter { c -> c.isDigit() } },
+                        label = { Text("Jumlah") },
+                        placeholder = { Text(rupiah.format(remaining)) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { amountText = remaining.toLong().toString() }) {
+                        Text("Pas")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        val amount = amountText.toDoubleOrNull()?.takeIf { it > 0 } ?: remaining
+                        payments.add(com.example.posapp.domain.usecase.PaymentSplit(selectedMethod, amount))
+                        amountText = ""
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Tambah Metode Pembayaran")
+                }
+            } else {
+                val change = paidSoFar - cart.total
+                if (change > 0) {
+                    Text(
+                        "Kembalian: ${rupiah.format(change)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text("Pembayaran pas, tidak ada kembalian.", style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { payments.clear() }) { Text("Ubah rincian pembayaran") }
+            }
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = {
-                    val amount = amountPaidText.toDoubleOrNull() ?: cart.total
-                    onConfirm(selectedMethod, amount)
-                },
+                onClick = { onConfirm(payments.toList()) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                enabled = !isProcessing
+                enabled = !isProcessing && isFullyPaid
             ) {
                 Text(if (isProcessing) "Memproses..." else "Konfirmasi Pembayaran")
             }
