@@ -71,11 +71,22 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
+          # Buang whitespace/newline tersembunyi yang kadang ikut ter-copy saat menyalin
+          # value dari keystore-info.txt ke GitHub Secrets (penyebab paling umum
+          # "keystore password was incorrect" walau password terlihat benar).
+          TRIMMED_STORE_PASS=$(printf '%s' "$RELEASE_KEYSTORE_PASSWORD" | tr -d '[:space:]')
+          TRIMMED_KEY_ALIAS=$(printf '%s' "$RELEASE_KEY_ALIAS" | tr -d '[:space:]')
+          TRIMMED_KEY_PASS=$(printf '%s' "$RELEASE_KEY_PASSWORD" | tr -d '[:space:]')
+          {
+            echo "TRIMMED_STORE_PASS=$TRIMMED_STORE_PASS"
+            echo "TRIMMED_KEY_ALIAS=$TRIMMED_KEY_ALIAS"
+            echo "TRIMMED_KEY_PASS=$TRIMMED_KEY_PASS"
+          } >> "$GITHUB_ENV"
           if ! keytool -list -v \
               -keystore "${{ runner.temp }}/release.keystore" \
-              -alias "$RELEASE_KEY_ALIAS" \
-              -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-              -keypass "$RELEASE_KEY_PASSWORD" > /dev/null 2>&1; then
+              -alias "$TRIMMED_KEY_ALIAS" \
+              -storepass "$TRIMMED_STORE_PASS" \
+              -keypass "$TRIMMED_KEY_PASS" > /dev/null 2>&1; then
             echo "::error::Gagal membuka release.keystore dengan secrets yang ada di repo ini."
             echo "::error::Kemungkinan besar RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD,"
             echo "::error::RELEASE_KEY_ALIAS, dan RELEASE_KEY_PASSWORD di GitHub Secrets tidak"
@@ -93,9 +104,12 @@ jobs:
         if: ${{ env.HAS_RELEASE_SECRETS == 'true' }}
         env:
           RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          # Pakai TRIMMED_* yang sudah dibersihkan dari whitespace/newline tersembunyi
+          # di step "Verify release keystore credentials" sebelumnya, bukan secret
+          # mentah, supaya konsisten dengan yang sudah divalidasi lolos oleh keytool.
+          RELEASE_KEYSTORE_PASSWORD: ${{ env.TRIMMED_STORE_PASS }}
+          RELEASE_KEY_ALIAS: ${{ env.TRIMMED_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ env.TRIMMED_KEY_PASS }}
         run: gradle assembleRelease --stacktrace
 
       - name: Build Release APK (unsigned, secrets belum lengkap)
