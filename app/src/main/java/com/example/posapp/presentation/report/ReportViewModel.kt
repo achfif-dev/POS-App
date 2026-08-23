@@ -141,7 +141,7 @@ class ReportViewModel @Inject constructor(
     ) {
         val current = _detailState.value ?: return
         if (updatedItems.isEmpty()) {
-            viewModelScope.launch { _events.emit(ReportEvent.ShowMessage("Transaksi harus punya minimal 1 item. Hapus seluruh transaksi lewat menu lain bila diperlukan.")) }
+            viewModelScope.launch { _events.emit(ReportEvent.ShowMessage("Transaksi harus punya minimal 1 item. Gunakan tombol \"Hapus Transaksi\" bila ingin menghapus seluruhnya.")) }
             return
         }
         viewModelScope.launch {
@@ -156,6 +156,21 @@ class ReportViewModel @Inject constructor(
             )
             _detailState.value = null
             _events.emit(ReportEvent.ShowMessage("Riwayat penjualan berhasil dikoreksi"))
+            load()
+        }
+    }
+
+    /**
+     * Menghapus SATU transaksi sepenuhnya (koreksi Admin bila kasir salah checkout transaksi,
+     * bukan sekadar salah 1 item). Stok dikembalikan otomatis. Tidak bisa dibatalkan setelah
+     * dipanggil — konfirmasi dilakukan di layer UI sebelum fungsi ini dipanggil.
+     */
+    fun deleteTransaction(transactionId: Long) {
+        viewModelScope.launch {
+            _detailState.value = _detailState.value?.copy(isSaving = true)
+            transactionRepository.deleteTransaction(transactionId)
+            _detailState.value = null
+            _events.emit(ReportEvent.ShowMessage("Transaksi berhasil dihapus"))
             load()
         }
     }

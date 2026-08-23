@@ -107,4 +107,22 @@ class TransactionRepository @Inject constructor(
             updatedTransaction.copy(editedByName = editedByName, editedAt = System.currentTimeMillis())
         )
     }
+
+    /**
+     * Menghapus SATU transaksi sepenuhnya (koreksi Admin untuk transaksi yang salah input
+     * total dari awal, mis. kasir checkout transaksi yang salah/ganda). Mengembalikan stok
+     * seluruh item ke produk/varian terkait sebelum baris transaksi (beserta item-itemnya,
+     * lewat FK CASCADE) dihapus. Tidak bisa dibatalkan.
+     */
+    suspend fun deleteTransaction(transactionId: Long) {
+        val items = transactionDao.getItems(transactionId)
+        items.forEach { item ->
+            if (item.variantId != null) {
+                productVariantDao.increaseStock(item.variantId, item.quantity)
+            } else {
+                productDao.increaseStock(item.productId, item.quantity)
+            }
+        }
+        transactionDao.deleteTransaction(transactionId)
+    }
 }

@@ -37,6 +37,11 @@ interface TransactionDao {
     @Query("DELETE FROM transaction_items WHERE id = :itemId")
     suspend fun deleteItem(itemId: Long)
 
+    // Menghapus transaksi sepenuhnya (koreksi Admin: transaksi salah total, bukan cuma 1 item).
+    // transaction_items punya FK CASCADE ke transactions, jadi item ikut terhapus otomatis.
+    @Query("DELETE FROM transactions WHERE id = :id")
+    suspend fun deleteTransaction(id: Long)
+
     @Insert
     suspend fun insertItems(items: List<TransactionItemEntity>)
 

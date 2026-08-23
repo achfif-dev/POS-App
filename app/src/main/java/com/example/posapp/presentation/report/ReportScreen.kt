@@ -38,6 +38,7 @@ fun ReportScreen(
     val uiState by viewModel.uiState.collectAsState()
     val detailState by viewModel.detailState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -58,120 +59,126 @@ fun ReportScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+        // Satu LazyColumn untuk SELURUH konten layar (bukan Column biasa) agar di mode
+        // lanskap — di mana tinggi layar jauh lebih pendek — seluruh konten (ringkasan,
+        // produk terlaris, riwayat transaksi) tetap bisa discroll sampai bawah.
+        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PresetChip("Hari Ini", uiState.preset == ReportRangePreset.TODAY) { viewModel.selectPreset(ReportRangePreset.TODAY) }
+                    PresetChip("Minggu Ini", uiState.preset == ReportRangePreset.THIS_WEEK) { viewModel.selectPreset(ReportRangePreset.THIS_WEEK) }
+                    PresetChip("Bulan Ini", uiState.preset == ReportRangePreset.THIS_MONTH) { viewModel.selectPreset(ReportRangePreset.THIS_MONTH) }
+                }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PresetChip("Hari Ini", uiState.preset == ReportRangePreset.TODAY) { viewModel.selectPreset(ReportRangePreset.TODAY) }
-                PresetChip("Minggu Ini", uiState.preset == ReportRangePreset.THIS_WEEK) { viewModel.selectPreset(ReportRangePreset.THIS_WEEK) }
-                PresetChip("Bulan Ini", uiState.preset == ReportRangePreset.THIS_MONTH) { viewModel.selectPreset(ReportRangePreset.THIS_MONTH) }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            if (uiState.isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(16.dp))
-            }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SummaryCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Total Omzet",
-                    value = rupiah.format(uiState.summary.totalRevenue),
-                    accent = MaterialTheme.colorScheme.primary
-                )
-                SummaryCard(
-                    modifier = Modifier.weight(1f),
-                    label = "Laba Kotor",
-                    value = rupiah.format(uiState.summary.totalGrossProfit),
-                    accent = MaterialTheme.colorScheme.tertiary
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            SummaryCard(
-                modifier = Modifier.fillMaxWidth(),
-                label = "Jumlah Transaksi",
-                value = "${uiState.summary.totalTransactions}",
-                accent = MaterialTheme.colorScheme.secondary
-            )
-
-            Spacer(Modifier.height(24.dp))
-            Text("Produk Terlaris", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-
-            if (uiState.topItems.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                    Text("Belum ada penjualan pada periode ini", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (uiState.isLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
                 }
-            } else {
-                Column {
-                    uiState.topItems.forEach { item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(item.productName, fontWeight = FontWeight.Medium)
-                                Text("Terjual: ${item.totalQty}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text(rupiah.format(item.totalRevenue))
-                        }
-                        HorizontalDivider()
-                    }
-                }
-            }
 
-            Spacer(Modifier.height(24.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Riwayat Penjualan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                if (!uiState.isAdmin) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Hanya lihat — hanya Admin yang bisa mengoreksi",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SummaryCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Total Omzet",
+                        value = rupiah.format(uiState.summary.totalRevenue),
+                        accent = MaterialTheme.colorScheme.primary
+                    )
+                    SummaryCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Laba Kotor",
+                        value = rupiah.format(uiState.summary.totalGrossProfit),
+                        accent = MaterialTheme.colorScheme.tertiary
                     )
                 }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (uiState.isAdmin) "Tap transaksi untuk mengoreksi kesalahan input kasir"
-                else "Tap transaksi untuk melihat detail (hanya Admin yang bisa mengedit)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
+                SummaryCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "Jumlah Transaksi",
+                    value = "${uiState.summary.totalTransactions}",
+                    accent = MaterialTheme.colorScheme.secondary
+                )
 
-            if (uiState.transactions.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                    Text("Belum ada transaksi pada periode ini", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(24.dp))
+                Text("Produk Terlaris", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+            }
+
+            if (uiState.topItems.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                        Text("Belum ada penjualan pada periode ini", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                    items(uiState.transactions, key = { it.id }) { tx ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.openTransactionDetail(tx.id) }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(tx.invoiceNumber, fontWeight = FontWeight.Medium)
-                                Text(
-                                    dateTimeFormat.format(java.util.Date(tx.createdAt)) +
-                                        (tx.cashierName?.let { " · $it" } ?: "") +
-                                        (if (tx.editedByName != null) " · Diedit ${tx.editedByName}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(rupiah.format(tx.total), fontWeight = FontWeight.Medium)
+                items(uiState.topItems, key = { "top-${it.productId}" }) { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(item.productName, fontWeight = FontWeight.Medium)
+                            Text("Terjual: ${item.totalQty}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        HorizontalDivider()
+                        Text(rupiah.format(item.totalRevenue))
                     }
+                    HorizontalDivider()
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(24.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Riwayat Penjualan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    if (!uiState.isAdmin) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Hanya lihat — hanya Admin yang bisa mengoreksi",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (uiState.isAdmin) "Tap transaksi untuk mengoreksi kesalahan input kasir"
+                    else "Tap transaksi untuk melihat detail (hanya Admin yang bisa mengedit)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            if (uiState.transactions.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                        Text("Belum ada transaksi pada periode ini", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                items(uiState.transactions, key = { it.id }) { tx ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.openTransactionDetail(tx.id) }
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(tx.invoiceNumber, fontWeight = FontWeight.Medium)
+                            Text(
+                                dateTimeFormat.format(java.util.Date(tx.createdAt)) +
+                                    (tx.cashierName?.let { " · $it" } ?: "") +
+                                    (if (tx.editedByName != null) " · Diedit ${tx.editedByName}" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(rupiah.format(tx.total), fontWeight = FontWeight.Medium)
+                    }
+                    HorizontalDivider()
                 }
             }
         }
@@ -184,8 +191,38 @@ fun ReportScreen(
             onDismiss = { viewModel.closeTransactionDetail() },
             onSave = { updatedTransaction, updatedItems, deletedItemIds ->
                 viewModel.saveTransactionCorrection(updatedTransaction, updatedItems, deletedItemIds)
-            }
+            },
+            onDeleteRequest = { showDeleteConfirm = true }
         )
+    }
+
+    if (showDeleteConfirm) {
+        val detail = detailState
+        if (detail == null) {
+            showDeleteConfirm = false
+        } else {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text("Hapus Transaksi?") },
+                text = {
+                    Text(
+                        "Transaksi ${detail.transaction.invoiceNumber} akan dihapus permanen dan " +
+                            "stok produknya dikembalikan. Tindakan ini tidak bisa dibatalkan."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteTransaction(detail.transaction.id)
+                    }) {
+                        Text("Hapus", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Batal") }
+                }
+            )
+        }
     }
 }
 
@@ -223,7 +260,8 @@ private fun TransactionDetailDialog(
     detail: TransactionDetailUiState,
     isAdmin: Boolean,
     onDismiss: () -> Unit,
-    onSave: (TransactionEntity, List<TransactionItemEntity>, List<Long>) -> Unit
+    onSave: (TransactionEntity, List<TransactionItemEntity>, List<Long>) -> Unit,
+    onDeleteRequest: () -> Unit
 ) {
     val transaction = detail.transaction
     var note by remember(transaction.id) { mutableStateOf(transaction.note.orEmpty()) }
@@ -336,7 +374,21 @@ private fun TransactionDetailDialog(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isAdmin) {
+                        TextButton(onClick = onDeleteRequest, enabled = !detail.isSaving) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Hapus Transaksi", color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+                    Row {
                     TextButton(onClick = onDismiss) { Text(if (isAdmin) "Batal" else "Tutup") }
                     if (isAdmin) {
                         Spacer(Modifier.width(8.dp))
@@ -364,6 +416,7 @@ private fun TransactionDetailDialog(
                         ) {
                             Text(if (detail.isSaving) "Menyimpan..." else "Simpan Koreksi")
                         }
+                    }
                     }
                 }
             }
