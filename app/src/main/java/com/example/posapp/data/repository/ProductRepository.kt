@@ -49,6 +49,39 @@ class ProductRepository @Inject constructor(
         )
     }
 
+    /** Penyesuaian stok manual untuk satu kombinasi varian tertentu, dengan riwayat tersendiri. */
+    suspend fun adjustVariantStock(
+        productId: Long,
+        variantId: Long,
+        variantLabel: String,
+        type: String,
+        quantity: Int,
+        reason: String?
+    ) {
+        when (type) {
+            "IN" -> productVariantDao.increaseStock(variantId, quantity)
+            "OUT" -> productVariantDao.decreaseStock(variantId, quantity)
+            "OPNAME" -> {
+                val current = productVariantDao.findById(variantId)?.stock ?: 0
+                val diff = quantity - current
+                if (diff > 0) productVariantDao.increaseStock(variantId, diff)
+                if (diff < 0) productVariantDao.decreaseStock(variantId, -diff)
+            }
+        }
+        stockAdjustmentDao.insert(
+            StockAdjustmentEntity(
+                productId = productId,
+                type = type,
+                quantity = quantity,
+                reason = reason,
+                variantId = variantId,
+                variantLabelSnapshot = variantLabel
+            )
+        )
+    }
+
+    fun observeAdjustmentHistory(): Flow<List<StockAdjustmentEntity>> = stockAdjustmentDao.observeAll()
+
     suspend fun getAllForExport(): List<ProductEntity> = productDao.getAllForExport()
 
     // --- Varian produk (matrix Ukuran x Warna dengan stok terpisah) ---

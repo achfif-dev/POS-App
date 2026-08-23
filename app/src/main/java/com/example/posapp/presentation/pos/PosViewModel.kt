@@ -10,6 +10,7 @@ import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
 import com.example.posapp.data.repository.ProductRepository
@@ -46,7 +47,8 @@ data class PosUiState(
     val cart: Cart = Cart(),
     val isProcessing: Boolean = false,
     val storeProfile: StoreProfile = StoreProfile(),
-    val cashierName: String? = null
+    val cashierName: String? = null,
+    val isAdmin: Boolean = true
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -98,7 +100,8 @@ class PosViewModel @Inject constructor(
             cart = cart,
             isProcessing = processing,
             storeProfile = profile,
-            cashierName = user?.name
+            cashierName = user?.name,
+            isAdmin = user == null || user.role == UserRole.ADMIN
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PosUiState())
 

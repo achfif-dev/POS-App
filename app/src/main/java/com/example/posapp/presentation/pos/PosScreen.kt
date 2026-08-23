@@ -1,6 +1,7 @@
 package com.example.posapp.presentation.pos
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +44,8 @@ import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.domain.model.Cart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -151,11 +155,13 @@ fun PosScreen(
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null) },
                             onClick = { showMenu = false; onOpenReports() }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Pengaturan") },
-                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                            onClick = { showMenu = false; onOpenSettings() }
-                        )
+                        if (uiState.isAdmin) {
+                            DropdownMenuItem(
+                                text = { Text("Pengaturan") },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                onClick = { showMenu = false; onOpenSettings() }
+                            )
+                        }
                         if (uiState.cashierName != null) {
                             HorizontalDivider()
                             DropdownMenuItem(
@@ -263,6 +269,7 @@ fun PosScreen(
         PaymentModal(
             cart = uiState.cart,
             qrisImagePath = uiState.storeProfile.qrisImagePath,
+            qrisRawContent = uiState.storeProfile.qrisRawContent,
             isProcessing = uiState.isProcessing,
             onDismiss = { showPaymentSheet = false },
             onConfirm = { payments -> viewModel.checkout(payments) }
@@ -499,6 +506,7 @@ private fun paymentMethodLabel(method: PaymentMethod): String = when (method) {
 private fun PaymentModal(
     cart: Cart,
     qrisImagePath: String?,
+    qrisRawContent: String?,
     isProcessing: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>) -> Unit
@@ -554,21 +562,57 @@ private fun PaymentModal(
 
                 if (selectedMethod == PaymentMethod.QRIS) {
                     Spacer(Modifier.height(16.dp))
-                    if (qrisImagePath != null) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            AsyncImage(
-                                model = qrisImagePath,
-                                contentDescription = "Kode QRIS",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(200.dp)
+                    val dynamicAmount = remaining.toLong()
+                    val dynamicBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, qrisRawContent, dynamicAmount) {
+                        value = if (qrisRawContent != null && dynamicAmount > 0) {
+                            withContext(Dispatchers.Default) {
+                                runCatching { com.example.posapp.data.qris.QrisUtil.generateDynamicQrisBitmap(qrisRawContent, dynamicAmount) }.getOrNull()
+                            }
+                        } else null
+                    }
+                    when {
+                        dynamicBitmap != null -> {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Image(
+                                        bitmap = dynamicBitmap!!.asImageBitmap(),
+                                        contentDescription = "Kode QRIS dinamis",
+                                        modifier = Modifier.size(200.dp)
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        "Nominal ${rupiah.format(dynamicAmount.toDouble())} sudah otomatis terisi di QR ini",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                        qrisImagePath != null -> {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    AsyncImage(
+                                        model = qrisImagePath,
+                                        contentDescription = "Kode QRIS",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.size(200.dp)
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        "Konfirmasi nominal ${rupiah.format(dynamicAmount.toDouble())} secara manual ke pelanggan",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        else -> {
+                            Text(
+                                "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    } else {
-                        Text(
-                            "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
 

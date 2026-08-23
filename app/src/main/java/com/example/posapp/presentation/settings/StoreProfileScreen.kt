@@ -121,7 +121,16 @@ fun StoreProfileScreen(
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.size(200.dp)
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
+                        val dynamicActive = profile.qrisRawContent != null
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(if (dynamicActive) "QRIS Dinamis aktif (nominal otomatis)" else "Nominal manual (kode QR tidak terbaca)") },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (dynamicActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+                            )
+                        )
+                        Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { qrisPickerLauncher.launch("image/*") }) {
                                 Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))

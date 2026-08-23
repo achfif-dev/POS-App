@@ -1,5 +1,6 @@
 package com.example.posapp.presentation.dashboard
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -121,6 +124,15 @@ fun DashboardScreen(
                 }
             }
 
+            if (uiState.revenueTrend.isNotEmpty()) {
+                item {
+                    Text("Tren Omzet 7 Hari Terakhir", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                item {
+                    RevenueTrendChart(uiState.revenueTrend)
+                }
+            }
+
             item {
                 Text("Produk Terlaris Hari Ini", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
@@ -163,7 +175,9 @@ fun DashboardScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     QuickMenuButton(Modifier.weight(1f), Icons.Default.Inventory2, "Produk", onOpenProducts)
                     QuickMenuButton(Modifier.weight(1f), Icons.AutoMirrored.Filled.TrendingUp, "Laporan", onOpenReports)
-                    QuickMenuButton(Modifier.weight(1f), Icons.Default.Settings, "Pengaturan", onOpenSettings)
+                    if (uiState.isAdmin) {
+                        QuickMenuButton(Modifier.weight(1f), Icons.Default.Settings, "Pengaturan", onOpenSettings)
+                    }
                 }
             }
             item { Spacer(Modifier.height(72.dp)) } // ruang untuk FAB
@@ -195,6 +209,65 @@ private fun SummaryCard(
             Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+/** Grafik batang mini omzet 7 hari terakhir, digambar langsung dengan Canvas (tanpa library chart). */
+@Composable
+private fun RevenueTrendChart(trend: List<DayRevenue>) {
+    val barColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val maxRevenue = (trend.maxOfOrNull { it.revenue } ?: 0.0).coerceAtLeast(1.0)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                trend.forEach { day ->
+                    val fraction = (day.revenue / maxRevenue).toFloat().coerceIn(0f, 1f)
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .width(18.dp)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+                                val barHeight = size.height * fraction
+                                // trek belakang (menunjukkan tinggi maksimum area grafik)
+                                drawRoundRect(
+                                    color = trackColor,
+                                    topLeft = Offset(0f, 0f),
+                                    size = androidx.compose.ui.geometry.Size(size.width, size.height),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                                )
+                                drawRoundRect(
+                                    color = barColor,
+                                    topLeft = Offset(0f, size.height - barHeight),
+                                    size = androidx.compose.ui.geometry.Size(size.width, barHeight.coerceAtLeast(4f)),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(day.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Tertinggi: ${rupiah.format(maxRevenue)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

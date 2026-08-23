@@ -15,6 +15,9 @@ interface StockAdjustmentDao {
     @Query("SELECT * FROM stock_adjustments WHERE productId = :productId ORDER BY createdAt DESC")
     fun observeForProduct(productId: Long): Flow<List<StockAdjustmentEntity>>
 
+    @Query("SELECT * FROM stock_adjustments WHERE variantId = :variantId ORDER BY createdAt DESC")
+    fun observeForVariant(variantId: Long): Flow<List<StockAdjustmentEntity>>
+
     @Query("SELECT * FROM stock_adjustments ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<StockAdjustmentEntity>>
 }

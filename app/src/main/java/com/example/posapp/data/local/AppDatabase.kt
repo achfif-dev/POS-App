@@ -46,7 +46,7 @@ class Converters {
         UserEntity::class,
         TransactionPaymentEntity::class
     ],
-    version = 3, // v3: tambah tabel transaction_payments (split/multi pembayaran)
+    version = 4, // v4: tambah variantId & variantLabelSnapshot di stock_adjustments (riwayat per varian)
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)

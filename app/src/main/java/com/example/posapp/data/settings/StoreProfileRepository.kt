@@ -20,6 +20,7 @@ data class StoreProfile(
     val phone: String = "",
     val receiptFooter: String = "Terima kasih telah berbelanja!",
     val qrisImagePath: String? = null,
+    val qrisRawContent: String? = null, // payload EMVCo mentah hasil decode gambar QRIS, dipakai untuk QRIS dinamis
     val pinLoginEnabled: Boolean = false
 )
 
@@ -33,6 +34,7 @@ class StoreProfileRepository @Inject constructor(
         val PHONE = stringPreferencesKey("store_phone")
         val FOOTER = stringPreferencesKey("receipt_footer")
         val QRIS_PATH = stringPreferencesKey("qris_image_path")
+        val QRIS_RAW_CONTENT = stringPreferencesKey("qris_raw_content")
         val PIN_LOGIN_ENABLED = booleanPreferencesKey("pin_login_enabled")
     }
 
@@ -43,6 +45,7 @@ class StoreProfileRepository @Inject constructor(
             phone = prefs[Keys.PHONE] ?: "",
             receiptFooter = prefs[Keys.FOOTER] ?: "Terima kasih telah berbelanja!",
             qrisImagePath = prefs[Keys.QRIS_PATH],
+            qrisRawContent = prefs[Keys.QRIS_RAW_CONTENT],
             pinLoginEnabled = prefs[Keys.PIN_LOGIN_ENABLED] ?: false
         )
     }
@@ -64,6 +67,12 @@ class StoreProfileRepository @Inject constructor(
     suspend fun updateQrisImagePath(path: String?) {
         context.storeProfileDataStore.edit { prefs ->
             if (path == null) prefs.remove(Keys.QRIS_PATH) else prefs[Keys.QRIS_PATH] = path
+        }
+    }
+
+    suspend fun updateQrisRawContent(content: String?) {
+        context.storeProfileDataStore.edit { prefs ->
+            if (content == null) prefs.remove(Keys.QRIS_RAW_CONTENT) else prefs[Keys.QRIS_RAW_CONTENT] = content
         }
     }
 

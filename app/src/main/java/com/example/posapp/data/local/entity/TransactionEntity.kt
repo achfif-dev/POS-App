@@ -96,5 +96,7 @@ data class StockAdjustmentEntity(
     val type: String,        // "IN", "OUT", "OPNAME"
     val quantity: Int,       // selalu positif; arah ditentukan oleh 'type'
     val reason: String? = null,
+    val variantId: Long? = null,             // diisi bila penyesuaian ini untuk kombinasi varian tertentu
+    val variantLabelSnapshot: String? = null, // snapshot label varian saat penyesuaian dibuat, untuk riwayat
     val createdAt: Long = System.currentTimeMillis()
 )

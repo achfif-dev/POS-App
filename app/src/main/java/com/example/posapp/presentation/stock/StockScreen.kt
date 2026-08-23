@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +15,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.local.entity.ProductEntity
+import com.example.posapp.data.local.entity.ProductVariantEntity
+import com.example.posapp.data.local.entity.StockAdjustmentEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private val historyDateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("in", "ID"))
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,9 +31,13 @@ fun StockScreen(
 ) {
     val products by viewModel.products.collectAsState()
     val lowStock by viewModel.lowStockProducts.collectAsState()
+    val history by viewModel.adjustmentHistory.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var adjustingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var pickingVariantsFor by remember { mutableStateOf<ProductEntity?>(null) }
+    var adjustingVariant by remember { mutableStateOf<Pair<ProductEntity, ProductVariantEntity>?>(null) }
     var showLowStockOnly by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -36,6 +48,7 @@ fun StockScreen(
     }
 
     val displayedList = if (showLowStockOnly) lowStock else products
+    val productNameById = remember(products) { products.associateBy({ it.id }, { it.name }) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -44,6 +57,11 @@ fun StockScreen(
                 title = { Text("Stok & Inventaris") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali") }
+                },
+                actions = {
+                    IconButton(onClick = { showHistory = true }) {
+                        Icon(Icons.Default.History, contentDescription = "Riwayat Penyesuaian Stok")
+                    }
                 }
             )
         }
@@ -69,11 +87,17 @@ fun StockScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(product.name, fontWeight = FontWeight.SemiBold)
-                                val color = if (product.stock <= product.lowStockThreshold)
-                                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                Text("Stok saat ini: ${product.stock}", color = color)
+                                if (product.hasVariants) {
+                                    Text("Stok dikelola per varian", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    val color = if (product.stock <= product.lowStockThreshold)
+                                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    Text("Stok saat ini: ${product.stock}", color = color)
+                                }
                             }
-                            TextButton(onClick = { adjustingProduct = product }) { Text("Sesuaikan") }
+                            TextButton(onClick = {
+                                if (product.hasVariants) pickingVariantsFor = product else adjustingProduct = product
+                            }) { Text("Sesuaikan") }
                         }
                         HorizontalDivider()
                     }
@@ -84,7 +108,8 @@ fun StockScreen(
 
     adjustingProduct?.let { product ->
         StockAdjustDialog(
-            product = product,
+            title = "Sesuaikan Stok: ${product.name}",
+            currentStock = product.stock,
             onDismiss = { adjustingProduct = null },
             onConfirm = { type, qty, reason ->
                 viewModel.adjustStock(product.id, type, qty, reason)
@@ -92,11 +117,92 @@ fun StockScreen(
             }
         )
     }
+
+    pickingVariantsFor?.let { product ->
+        VariantPickerForAdjustDialog(
+            product = product,
+            viewModel = viewModel,
+            onDismiss = { pickingVariantsFor = null },
+            onVariantSelected = { variant ->
+                adjustingVariant = product to variant
+                pickingVariantsFor = null
+            }
+        )
+    }
+
+    adjustingVariant?.let { (product, variant) ->
+        StockAdjustDialog(
+            title = "Sesuaikan Stok: ${product.name} (${variant.variantLabel})",
+            currentStock = variant.stock,
+            onDismiss = { adjustingVariant = null },
+            onConfirm = { type, qty, reason ->
+                viewModel.adjustVariantStock(product.id, variant, type, qty, reason)
+                adjustingVariant = null
+            }
+        )
+    }
+
+    if (showHistory) {
+        AdjustmentHistorySheet(
+            history = history,
+            productNameById = productNameById,
+            onDismiss = { showHistory = false }
+        )
+    }
+}
+
+@Composable
+private fun VariantPickerForAdjustDialog(
+    product: ProductEntity,
+    viewModel: StockViewModel,
+    onDismiss: () -> Unit,
+    onVariantSelected: (ProductVariantEntity) -> Unit
+) {
+    var variants by remember { mutableStateOf<List<ProductVariantEntity>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(product.id) {
+        variants = viewModel.getVariantsFor(product.id)
+        isLoading = false
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(20.dp).fillMaxWidth()) {
+                Text("Pilih Varian: ${product.name}", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                if (isLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else if (variants.isEmpty()) {
+                    Text("Belum ada varian untuk produk ini.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    variants.forEach { variant ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(variant.variantLabel, fontWeight = FontWeight.SemiBold)
+                                Text("Stok: ${variant.stock}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { onVariantSelected(variant) }) { Text("Pilih") }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Batal") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun StockAdjustDialog(
-    product: ProductEntity,
+    title: String,
+    currentStock: Int,
     onDismiss: () -> Unit,
     onConfirm: (type: String, quantity: Int, reason: String?) -> Unit
 ) {
@@ -107,8 +213,8 @@ private fun StockAdjustDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(20.dp).fillMaxWidth()) {
-                Text("Sesuaikan Stok: ${product.name}", style = MaterialTheme.typography.titleMedium)
-                Text("Stok saat ini: ${product.stock}", style = MaterialTheme.typography.bodySmall)
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text("Stok saat ini: $currentStock", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(16.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -145,5 +251,73 @@ private fun StockAdjustDialog(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AdjustmentHistorySheet(
+    history: List<StockAdjustmentEntity>,
+    productNameById: Map<Long, String>,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(16.dp).fillMaxWidth().heightIn(max = 520.dp)) {
+            Text("Riwayat Penyesuaian Stok", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Termasuk penyesuaian per produk & per kombinasi varian",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            if (history.isEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Text("Belum ada riwayat penyesuaian stok", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn {
+                    items(history, key = { it.id }) { entry ->
+                        val productName = productNameById[entry.productId] ?: "Produk tidak dikenal"
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    productName + (entry.variantLabelSnapshot?.let { " ($it)" } ?: ""),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    historyDateFormat.format(Date(entry.createdAt)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                entry.reason?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            AdjustmentTypeBadge(type = entry.type)
+                            Spacer(Modifier.width(8.dp))
+                            Text("${entry.quantity}", fontWeight = FontWeight.Bold)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdjustmentTypeBadge(type: String) {
+    val (label, container, content) = when (type) {
+        "IN" -> Triple("Masuk", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+        "OUT" -> Triple("Keluar", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+        else -> Triple("Opname", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+    }
+    Surface(shape = MaterialTheme.shapes.small, color = container) {
+        Text(label, color = content, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }
 }

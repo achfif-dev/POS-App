@@ -2,6 +2,7 @@ package com.example.posapp.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.qris.QrisImageDecoder
 import com.example.posapp.data.settings.StoreProfile
 import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,7 +20,8 @@ sealed class StoreProfileEvent {
 
 @HiltViewModel
 class StoreProfileViewModel @Inject constructor(
-    private val storeProfileRepository: StoreProfileRepository
+    private val storeProfileRepository: StoreProfileRepository,
+    private val qrisImageDecoder: QrisImageDecoder
 ) : ViewModel() {
 
     val uiState: StateFlow<StoreProfile> = storeProfileRepository.profile
@@ -39,10 +41,27 @@ class StoreProfileViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Simpan gambar QRIS baru, lalu coba baca ulang kode QR di dalamnya untuk mendapatkan
+     * payload EMVCo mentah — bila berhasil, QRIS Dinamis (nominal otomatis) aktif di layar
+     * pembayaran; bila gagal (gambar bukan kode QR EMVCo yang valid), fallback ke gambar statis.
+     */
     fun setQrisImagePath(path: String?) {
         viewModelScope.launch {
             storeProfileRepository.updateQrisImagePath(path)
-            _events.emit(StoreProfileEvent.ShowMessage(if (path != null) "Gambar QRIS tersimpan" else "Gambar QRIS dihapus"))
+            if (path == null) {
+                storeProfileRepository.updateQrisRawContent(null)
+                _events.emit(StoreProfileEvent.ShowMessage("Gambar QRIS dihapus"))
+                return@launch
+            }
+            val rawContent = qrisImageDecoder.decode(path)
+            storeProfileRepository.updateQrisRawContent(rawContent)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(
+                    if (rawContent != null) "Gambar QRIS tersimpan — QRIS Dinamis aktif (nominal otomatis)"
+                    else "Gambar QRIS tersimpan, tapi kode QR tidak terbaca — nominal tidak akan otomatis terisi"
+                )
+            )
         }
     }
 

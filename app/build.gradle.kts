@@ -102,6 +102,9 @@ dependencies {
     // Coil for local product photos & QRIS image
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // ZXing core: generate kode QR dinamis per transaksi (QRIS amount injection), murni offline
+    implementation("com.google.zxing:core:3.5.3")
+
     // DataStore (profil toko, preferensi login PIN, dsb.)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.posapp.data.auth.SessionManager
+import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.presentation.auth.AuthGateViewModel
 import com.example.posapp.presentation.auth.LoginScreen
 import com.example.posapp.presentation.dashboard.DashboardScreen
@@ -119,11 +120,19 @@ fun PosNavHost(sessionManager: SessionManager) {
         composable("reports") { ReportScreen(onBack = { navController.popBackStack() }) }
         composable("stock") { StockScreen(onBack = { navController.popBackStack() }) }
         composable("settings") {
-            SettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenStoreProfile = { navController.navigate("store_profile") },
-                onOpenUserManagement = { navController.navigate("user_management") }
-            )
+            // Guard peran: Kasir tidak diizinkan membuka Pengaturan (tautan pribadi/deep-link
+            // sekalipun) — menu ini sudah disembunyikan di UI, ini lapisan pertahanan kedua.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val isAdmin = currentUser == null || currentUser?.role == UserRole.ADMIN
+            if (isAdmin) {
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenStoreProfile = { navController.navigate("store_profile") },
+                    onOpenUserManagement = { navController.navigate("user_management") }
+                )
+            } else {
+                androidx.compose.runtime.LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
         composable("store_profile") { StoreProfileScreen(onBack = { navController.popBackStack() }) }
         composable("user_management") { UserManagementScreen(onBack = { navController.popBackStack() }) }
