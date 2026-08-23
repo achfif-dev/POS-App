@@ -6,6 +6,22 @@ plugins {
     kotlin("plugin.serialization") version "1.9.24"
 }
 
+// Kredensial keystore release DIBACA DARI ENVIRONMENT VARIABLE, bukan di-hardcode di sini
+// atau di gradle.properties yang ikut ter-commit — supaya aman untuk repo publik/privat.
+// Di GitHub Actions, env var ini diisi dari GitHub Secrets (lihat android_build.yml).
+// Kalau tidak di-set (mis. build lokal tanpa keystore), release TIDAK akan ditandatangani —
+// build tetap jalan (tidak error), tapi APK hasilnya tidak akan bisa diinstall sampai
+// signing config di-set. Gunakan APK debug untuk testing cepat di HP.
+val releaseKeystoreFile: String? = System.getenv("RELEASE_KEYSTORE_FILE")
+val releaseKeystorePassword: String? = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias: String? = System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword: String? = System.getenv("RELEASE_KEY_PASSWORD")
+val hasReleaseSigningConfig: Boolean =
+    !releaseKeystoreFile.isNullOrBlank() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.example.posapp"
     compileSdk = 34
@@ -21,6 +37,17 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = file(releaseKeystoreFile!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -28,6 +55,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             isMinifyEnabled = false
