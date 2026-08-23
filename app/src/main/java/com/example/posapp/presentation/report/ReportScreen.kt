@@ -25,6 +25,7 @@ import com.example.posapp.data.local.entity.TransactionItemEntity
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.example.posapp.presentation.theme.PosBrandedTopBar
 
 private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
 private val dateTimeFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("in", "ID"))
@@ -51,7 +52,7 @@ fun ReportScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = { Text("Laporan Penjualan") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali") }

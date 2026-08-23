@@ -18,6 +18,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.local.entity.UserEntity
 import com.example.posapp.data.local.entity.UserRole
+import com.example.posapp.presentation.theme.PosBrandedTopBar
 
 /** Layar manajemen kasir/admin & PIN login (fitur multi-user). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,7 +43,7 @@ fun UserManagementScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = { Text("Pengguna & Login PIN") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali") }

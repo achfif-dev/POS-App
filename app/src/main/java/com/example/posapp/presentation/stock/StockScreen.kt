@@ -20,6 +20,8 @@ import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.posapp.presentation.theme.PosBrandedTopBar
+import com.example.posapp.presentation.theme.ProductAvatar
 
 private val historyDateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("in", "ID"))
 
@@ -32,6 +34,7 @@ fun StockScreen(
     val products by viewModel.products.collectAsState()
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val history by viewModel.adjustmentHistory.collectAsState()
+    val categoryNamesById by viewModel.categoryNamesById.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var adjustingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var pickingVariantsFor by remember { mutableStateOf<ProductEntity?>(null) }
@@ -53,7 +56,7 @@ fun StockScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = { Text("Stok & Inventaris") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali") }
@@ -79,27 +82,17 @@ fun StockScreen(
                     Text("Tidak ada produk untuk ditampilkan")
                 }
             } else {
-                LazyColumn {
+                // Kartu bulat + avatar produk senada dengan Kasir & Produk (bukan daftar
+                // rata bergaris pembatas seperti sebelumnya).
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(displayedList, key = { it.id }) { product ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(product.name, fontWeight = FontWeight.SemiBold)
-                                if (product.hasVariants) {
-                                    Text("Stok dikelola per varian", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                } else {
-                                    val color = if (product.stock <= product.lowStockThreshold)
-                                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                    Text("Stok saat ini: ${product.stock}", color = color)
-                                }
-                            }
-                            TextButton(onClick = {
+                        StockProductRow(
+                            product = product,
+                            categoryName = product.categoryId?.let { categoryNamesById[it] },
+                            onAdjust = {
                                 if (product.hasVariants) pickingVariantsFor = product else adjustingProduct = product
-                            }) { Text("Sesuaikan") }
-                        }
-                        HorizontalDivider()
+                            }
+                        )
                     }
                 }
             }
@@ -148,6 +141,35 @@ fun StockScreen(
             productNameById = productNameById,
             onDismiss = { showHistory = false }
         )
+    }
+}
+
+@Composable
+private fun StockProductRow(
+    product: ProductEntity,
+    categoryName: String?,
+    onAdjust: () -> Unit
+) {
+    val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
+
+    Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ProductAvatar(photoPath = product.photoPath, name = product.name, categoryName = categoryName, size = 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold)
+                if (product.hasVariants) {
+                    Text("Stok dikelola per varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    val color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text("Stok saat ini: ${product.stock}", style = MaterialTheme.typography.bodySmall, color = color)
+                }
+            }
+            TextButton(onClick = onAdjust) { Text("Sesuaikan") }
+        }
     }
 }
 

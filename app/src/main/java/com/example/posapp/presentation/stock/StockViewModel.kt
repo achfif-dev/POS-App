@@ -2,15 +2,18 @@ package com.example.posapp.presentation.stock
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
+import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.ProductRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -21,11 +24,18 @@ sealed class StockEvent {
 
 @HiltViewModel
 class StockViewModel @Inject constructor(
-    private val productRepository: ProductRepository
+    private val productRepository: ProductRepository,
+    private val categoryRepository: CategoryRepository
 ) : ViewModel() {
 
     val products: StateFlow<List<ProductEntity>> = productRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Peta categoryId -> nama kategori, dipakai untuk memilih ikon avatar produk yang
+    // sesuai kategori (senada dengan avatar produk di layar Kasir & Produk).
+    val categoryNamesById: StateFlow<Map<Long, String>> = categoryRepository.observeAll()
+        .map { categories: List<CategoryEntity> -> categories.associate { it.id to it.name } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val lowStockProducts: StateFlow<List<ProductEntity>> = productRepository.observeLowStock()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

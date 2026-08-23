@@ -9,21 +9,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Chair
-import androidx.compose.material.icons.filled.Checkroom
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
@@ -32,15 +22,12 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.filled.Toys
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +41,10 @@ import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.domain.model.Cart
+import com.example.posapp.presentation.theme.PosBrandedTopBar
+import com.example.posapp.presentation.theme.ProductAvatar
+import com.example.posapp.presentation.theme.StoreLogo
+import com.example.posapp.presentation.theme.accentColorFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
@@ -131,16 +122,18 @@ fun PosScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Storefront, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        StoreLogo(logoPath = uiState.storeProfile.logoImagePath, size = 32.dp)
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Text("Kasir")
-                            uiState.cashierName?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                            Text(uiState.storeProfile.name, maxLines = 1)
+                            Text(
+                                "Kasir" + (uiState.cashierName?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 },
@@ -405,45 +398,6 @@ private fun ReceiptDialog(
     )
 }
 
-// Palet aksen berputar untuk avatar ikon produk, dipilih berdasarkan nama produk supaya
-// grid produk terlihat berwarna & mudah dibedakan sekilas, bukan flat/polos.
-private val productAccentPalette = listOf(
-    Color(0xFFE8590C), Color(0xFF6750A4), Color(0xFF0288D1),
-    Color(0xFF2E7D32), Color(0xFFC2185B), Color(0xFFF9A825)
-)
-
-private fun accentColorFor(name: String): Color =
-    productAccentPalette[(name.hashCode().let { if (it < 0) -it else it }) % productAccentPalette.size]
-
-// Ikon default per kategori produk, dipakai saat produk belum punya foto sendiri.
-// Dicocokkan dari nama kategori (case-insensitive, berbasis kata kunci) supaya tetap
-// bekerja untuk kategori custom buatan toko, bukan daftar tetap yang kaku.
-private fun iconForCategory(categoryName: String?): androidx.compose.ui.graphics.vector.ImageVector {
-    val n = categoryName?.lowercase().orEmpty()
-    return when {
-        n.isBlank() -> Icons.Default.Inventory2
-        listOf("baju", "pakaian", "fashion", "apparel", "kaos", "kemeja", "hem", "celana", "jaket").any { n.contains(it) } ->
-            Icons.Default.Checkroom
-        listOf("makanan", "food", "snack", "kue", "roti", "cake", "kuliner").any { n.contains(it) } ->
-            Icons.Default.Fastfood
-        listOf("minuman", "drink", "kopi", "teh", "jus", "beverage").any { n.contains(it) } ->
-            Icons.Default.LocalCafe
-        listOf("elektronik", "gadget", "hp", "komputer", "electronic").any { n.contains(it) } ->
-            Icons.Default.Devices
-        listOf("kosmetik", "kecantikan", "skincare", "beauty").any { n.contains(it) } ->
-            Icons.Default.Face
-        listOf("obat", "kesehatan", "farmasi", "apotek", "health").any { n.contains(it) } ->
-            Icons.Default.MedicalServices
-        listOf("mainan", "toys", "toy").any { n.contains(it) } ->
-            Icons.Default.Toys
-        listOf("rumah tangga", "peralatan rumah", "household", "perabot").any { n.contains(it) } ->
-            Icons.Default.Chair
-        listOf("atk", "alat tulis", "kantor", "buku", "stationery").any { n.contains(it) } ->
-            Icons.Default.Edit
-        else -> Icons.Default.Category
-    }
-}
-
 @Composable
 private fun ProductCard(product: ProductEntity, categoryName: String? = null, onClick: () -> Unit) {
     val accent = accentColorFor(product.name)
@@ -452,35 +406,14 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
     // Foto/ikon produk diletakkan di SAMPING (kiri) nama & harga dalam satu Row,
     // bukan ditumpuk di atas teks — supaya kartu lebih ringkas seperti daftar produk
     // pada umumnya dan foto langsung terlihat berdampingan dengan detail produknya.
+    // ProductAvatar (foto atau ikon sesuai kategori) sama persis dengan yang dipakai
+    // di layar Produk & Stok, supaya produk yang sama terlihat konsisten di mana pun.
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
         Row(
             modifier = Modifier.padding(12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.Top
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (product.photoPath != null) {
-                    AsyncImage(
-                        model = product.photoPath,
-                        contentDescription = product.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape)
-                    )
-                } else {
-                    // Tanpa foto: pakai ikon sesuai kategori produk, bukan ikon kotak generik.
-                    Icon(
-                        iconForCategory(categoryName),
-                        contentDescription = null,
-                        tint = accent,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
+            ProductAvatar(photoPath = product.photoPath, name = product.name, categoryName = categoryName, size = 48.dp)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.Top) {

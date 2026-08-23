@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Inventory2
@@ -23,11 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import com.example.posapp.presentation.theme.PosBrandedTopBar
+import com.example.posapp.presentation.theme.StoreLogo
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -52,7 +51,7 @@ fun DashboardScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         StoreLogo(logoPath = uiState.storeLogoPath)
@@ -193,33 +192,7 @@ fun DashboardScreen(
     }
 }
 
-/** Logo toko di header Dashboard — pakai foto logo tersimpan bila ada, atau ikon toko default. */
-@Composable
-private fun StoreLogo(logoPath: String?) {
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (logoPath != null) {
-            AsyncImage(
-                model = logoPath,
-                contentDescription = "Logo toko",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Icon(
-                Icons.Default.Storefront,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
+/** Logo toko di header Dashboard — implementasi bersama ada di theme/BrandedTopBar.kt. */
 
 @Composable
 private fun SummaryCard(

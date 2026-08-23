@@ -38,6 +38,7 @@ import coil.compose.AsyncImage
 import com.example.posapp.presentation.theme.PosAccentPresets
 import com.example.posapp.presentation.theme.parseHexColorOrNull
 import java.io.File
+import com.example.posapp.presentation.theme.PosBrandedTopBar
 
 /** Format persentase pajak tanpa desimal berlebih, mis. 11.0 -> "11", 8.5 -> "8.5". */
 private fun formatTaxPercent(percent: Double): String =
@@ -95,7 +96,7 @@ fun StoreProfileScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = { Text("Profil Toko") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali") }

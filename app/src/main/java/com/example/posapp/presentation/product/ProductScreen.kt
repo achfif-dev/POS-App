@@ -46,6 +46,8 @@ import com.example.posapp.presentation.scanner.BarcodeScannerScreen
 import java.io.File
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.posapp.presentation.theme.PosBrandedTopBar
+import com.example.posapp.presentation.theme.ProductAvatar
 
 private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
 
@@ -79,7 +81,7 @@ fun ProductScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            PosBrandedTopBar(
                 title = { Text("Manajemen Produk") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -120,7 +122,9 @@ fun ProductScreen(
                     Text("Belum ada produk. Tap tombol + untuk menambahkan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                LazyColumn {
+                // Kartu bulat + avatar produk senada dengan tampilan Kasir (bukan daftar
+                // rata bergaris pembatas), supaya semua layar produk terasa satu desain.
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(uiState.products, key = { it.id }) { product ->
                         val categoryName = uiState.categories.find { it.id == product.categoryId }?.name
                         ProductRow(
@@ -145,7 +149,6 @@ fun ProductScreen(
                             onManageVariants = { variantManagerProductId = product.id },
                             onDelete = { productPendingDelete = product }
                         )
-                        HorizontalDivider()
                     }
                 }
             }
@@ -207,58 +210,42 @@ private fun ProductRow(
     onManageVariants: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
+    val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
+
+    // Kartu bulat dengan avatar foto/ikon kategori — komponen & gaya yang sama persis
+    // dengan kartu produk di Kasir (lihat ProductAvatar), supaya identitas produk
+    // (warna & ikon) konsisten di semua layar.
+    Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (product.photoPath != null) {
-                AsyncImage(
-                    model = product.photoPath,
-                    contentDescription = product.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+            ProductAvatar(photoPath = product.photoPath, name = product.name, categoryName = categoryName, size = 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "SKU: ${product.sku}" + (categoryName?.let { " · $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                Icon(
-                    Icons.Default.Inventory2,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(product.name, fontWeight = FontWeight.SemiBold)
-            Text(
-                "SKU: ${product.sku}" + (categoryName?.let { " · $it" } ?: ""),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row {
-                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.width(12.dp))
-                if (product.hasVariants) {
-                    Text("Punya varian", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                } else {
-                    val stockColor = if (product.stock <= product.lowStockThreshold)
-                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
+                Row {
+                    Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(12.dp))
+                    if (product.hasVariants) {
+                        Text("Punya varian", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    } else {
+                        val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        Text("Stok: ${product.stock}", style = MaterialTheme.typography.bodyMedium, color = stockColor)
+                    }
                 }
             }
+            if (product.hasVariants) {
+                IconButton(onClick = onManageVariants) { Icon(Icons.Default.Style, contentDescription = "Kelola Varian") }
+            }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Hapus") }
         }
-        if (product.hasVariants) {
-            IconButton(onClick = onManageVariants) { Icon(Icons.Default.Style, contentDescription = "Kelola Varian") }
-        }
-        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
-        IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Hapus") }
     }
 }
 
