@@ -2,9 +2,11 @@ package com.example.posapp.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.example.posapp.data.backup.BackupRepository
 import com.example.posapp.data.backup.BackupResult
 import com.example.posapp.data.export.ExcelExporter
+import com.example.posapp.data.export.FileShareHelper
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,7 +32,8 @@ class SettingsViewModel @Inject constructor(
     private val backupRepository: BackupRepository,
     private val excelExporter: ExcelExporter,
     private val productRepository: ProductRepository,
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val fileShareHelper: FileShareHelper
 ) : ViewModel() {
 
     private val _events = MutableSharedFlow<SettingsEvent>()
@@ -71,6 +74,17 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun listLocalBackups(): List<File> = backupRepository.listLocalBackups()
+
+    /** Menyalin file yang sudah di-export ke lokasi pilihan pengguna (mis. folder Download). */
+    fun saveExportToUri(file: File, destinationUri: Uri) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { fileShareHelper.saveToUri(file, destinationUri) }
+            _events.emit(
+                if (ok) SettingsEvent.ShowMessage("File tersimpan di perangkat.")
+                else SettingsEvent.ShowMessage("Gagal menyimpan file ke perangkat.")
+            )
+        }
+    }
 
     fun exportProductsExcel() {
         viewModelScope.launch {

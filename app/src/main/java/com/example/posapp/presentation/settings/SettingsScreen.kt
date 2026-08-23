@@ -54,18 +54,39 @@ fun SettingsScreen(
         }
     }
 
+    // File yang lagi menunggu dipilihkan lokasi simpan oleh pengguna via SAF (Storage Access
+    // Framework). Ini yang menyediakan opsi "simpan ke perangkat", terpisah dari "bagikan".
+    var filePendingSave by remember { mutableStateOf<File?>(null) }
+    val saveToDeviceLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        val file = filePendingSave
+        if (uri != null && file != null) {
+            viewModel.saveExportToUri(file, uri)
+        }
+        filePendingSave = null
+    }
+
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is SettingsEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
                 is SettingsEvent.ExportReady -> {
-                    snackbarHostState.showSnackbar("File siap: ${event.file.name}")
-                    context.startActivity(
-                        android.content.Intent.createChooser(
-                            fileShareHelper.createShareIntent(event.file, event.mimeType),
-                            "Bagikan file"
-                        )
+                    val result = snackbarHostState.showSnackbar(
+                        message = "File siap: ${event.file.name}",
+                        actionLabel = "Simpan ke Perangkat"
                     )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        filePendingSave = event.file
+                        saveToDeviceLauncher.launch(event.file.name)
+                    } else {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                fileShareHelper.createShareIntent(event.file, event.mimeType),
+                                "Bagikan file"
+                            )
+                        )
+                    }
                 }
             }
         }

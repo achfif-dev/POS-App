@@ -12,8 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.posapp"
-        minSdk = 26 // Apache POI (export Excel) memakai java.lang.invoke.MethodHandle,
-                    // yang baru didukung D8/Android mulai API 26 (Android 8.0)
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
@@ -90,9 +89,8 @@ dependencies {
     // Bluetooth ESC/POS Thermal Printer
     implementation("com.github.DantSu:ESCPOS-ThermalPrinter-Android:3.3.0")
 
-    // Excel / CSV export
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    // Excel (.xlsx) export ditulis manual via java.util.zip (lihat XlsxWriter.kt) — Apache POI
+    // SUDAH DIHAPUS karena tidak kompatibel dengan runtime Android (penyebab crash tombol export).
 
     // PDF generation is done via native android.graphics.pdf.PdfDocument (no extra dep needed)
 
