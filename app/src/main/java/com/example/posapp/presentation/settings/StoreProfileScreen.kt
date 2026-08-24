@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.posapp.data.settings.quickCashAmountList
 import com.example.posapp.presentation.theme.PosAccentPresets
 import com.example.posapp.presentation.theme.PosFontOption
 import com.example.posapp.presentation.theme.parseHexColorOrNull
@@ -44,6 +47,10 @@ import com.example.posapp.presentation.theme.PosBrandedTopBar
 /** Format persentase pajak tanpa desimal berlebih, mis. 11.0 -> "11", 8.5 -> "8.5". */
 private fun formatTaxPercent(percent: Double): String =
     if (percent == percent.toLong().toDouble()) percent.toLong().toString() else percent.toString()
+
+/** Format nominal cash tanpa desimal, mis. 50000 -> "Rp50.000". */
+private fun formatQuickCash(amount: Long): String =
+    "Rp" + amount.toString().reversed().chunked(3).joinToString(".").reversed()
 
 /** Layar Profil Toko — nama, alamat, telepon, catatan struk, dan gambar QRIS statis. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,6 +92,7 @@ fun StoreProfileScreen(
 
     var customHexInput by remember(profile.appColorHex) { mutableStateOf(profile.appColorHex ?: "") }
     var taxPercentInput by remember(profile.taxPercent) { mutableStateOf(formatTaxPercent(profile.taxPercent)) }
+    var newQuickCashInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -191,6 +199,73 @@ fun StoreProfileScreen(
                                 enabled = taxPercentInput.toDoubleOrNull() != null
                             ) { Text("Simpan") }
                         }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Text("Nominal Cepat Cash", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Tombol pintasan uang yang muncul di layar Pembayaran saat metode Cash dipilih, " +
+                    "supaya kasir tinggal tap nominal uang yang diberikan pelanggan",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    val quickCashAmounts = profile.quickCashAmountList()
+                    if (quickCashAmounts.isEmpty()) {
+                        Text(
+                            "Belum ada nominal cepat. Tambahkan lewat kolom di bawah.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            quickCashAmounts.forEach { amount ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = {},
+                                    label = { Text(formatQuickCash(amount)) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Hapus nominal ${formatQuickCash(amount)}",
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clickable { viewModel.removeQuickCashAmount(amount) }
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newQuickCashInput,
+                            onValueChange = { newQuickCashInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Nominal baru") },
+                            placeholder = { Text("Contoh: 50000") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Button(
+                            onClick = {
+                                newQuickCashInput.toLongOrNull()?.let { viewModel.addQuickCashAmount(it) }
+                                newQuickCashInput = ""
+                            },
+                            enabled = newQuickCashInput.toLongOrNull()?.let { it > 0 } == true
+                        ) { Text("Tambah") }
                     }
                 }
             }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
@@ -282,6 +284,7 @@ fun PosScreen(
             cart = uiState.cart,
             qrisImagePath = uiState.storeProfile.qrisImagePath,
             qrisRawContent = uiState.storeProfile.qrisRawContent,
+            quickCashAmounts = uiState.storeProfile.quickCashAmountList(),
             isProcessing = uiState.isProcessing,
             onDismiss = { showPaymentSheet = false },
             onConfirm = { payments -> viewModel.checkout(payments) }
@@ -509,6 +512,7 @@ private fun PaymentModal(
     cart: Cart,
     qrisImagePath: String?,
     qrisRawContent: String?,
+    quickCashAmounts: List<Long> = emptyList(),
     isProcessing: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>) -> Unit
@@ -613,6 +617,31 @@ private fun PaymentModal(
                                 "Gambar QRIS belum diunggah. Tambahkan lewat Pengaturan > Profil Toko.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                if (selectedMethod == PaymentMethod.CASH && quickCashAmounts.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Nominal Cepat",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Nominal >= sisa tagihan ditampilkan lebih dulu (paling relevan untuk uang yang
+                        // kemungkinan diberikan pelanggan), diikuti nominal lain agar tetap bisa dipilih
+                        // untuk pembayaran sebagian (split).
+                        quickCashAmounts.sortedBy { it < remaining.toLong() }.forEach { amount ->
+                            FilterChip(
+                                selected = amountText == amount.toString(),
+                                onClick = { amountText = amount.toString() },
+                                label = { Text(rupiah.format(amount.toDouble())) }
                             )
                         }
                     }

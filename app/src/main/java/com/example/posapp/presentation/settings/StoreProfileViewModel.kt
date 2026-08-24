@@ -6,10 +6,12 @@ import com.example.posapp.data.qris.QrisImageDecoder
 import com.example.posapp.data.settings.StoreProfile
 import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.example.posapp.data.settings.quickCashAmountList
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -114,6 +116,27 @@ class StoreProfileViewModel @Inject constructor(
             _events.emit(
                 StoreProfileEvent.ShowMessage(if (enabled) "Pajak diaktifkan (${percent}%)" else "Pajak dinonaktifkan")
             )
+        }
+    }
+
+    /** Tambah satu nominal cepat Cash baru (mis. 50000) ke daftar tombol cepat di layar Pembayaran. */
+    fun addQuickCashAmount(amount: Long) {
+        if (amount <= 0) return
+        viewModelScope.launch {
+            val current = storeProfileRepository.profile.first().quickCashAmountList()
+            val updated = (current + amount).distinct().sorted()
+            storeProfileRepository.updateQuickCashAmounts(updated.joinToString(","))
+            _events.emit(StoreProfileEvent.ShowMessage("Nominal cepat ditambahkan"))
+        }
+    }
+
+    /** Hapus satu nominal cepat Cash dari daftar tombol cepat di layar Pembayaran. */
+    fun removeQuickCashAmount(amount: Long) {
+        viewModelScope.launch {
+            val current = storeProfileRepository.profile.first().quickCashAmountList()
+            val updated = current.filter { it != amount }
+            storeProfileRepository.updateQuickCashAmounts(updated.joinToString(","))
+            _events.emit(StoreProfileEvent.ShowMessage("Nominal cepat dihapus"))
         }
     }
 }

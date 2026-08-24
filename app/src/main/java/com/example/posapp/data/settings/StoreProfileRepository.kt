@@ -28,8 +28,20 @@ data class StoreProfile(
     val fontChoice: String = "plus_jakarta_sans", // lihat PosFontOption di presentation/theme/Font.kt
     val receiptLanguage: String = "id", // bahasa struk & invoice PDF: "id" (Indonesia) atau "en" (English)
     val taxEnabled: Boolean = true, // matikan untuk toko yang tidak memungut pajak/PPN
-    val taxPercent: Double = 11.0 // persentase pajak/PPN yang dipakai saat taxEnabled = true
+    val taxPercent: Double = 11.0, // persentase pajak/PPN yang dipakai saat taxEnabled = true
+    val quickCashAmounts: String = "20000,50000,100000,150000,200000" // nominal cepat Cash, dipisah koma; lihat quickCashAmountList()
 )
+
+/**
+ * Parse [StoreProfile.quickCashAmounts] ("20000,50000,...") jadi list nominal siap pakai untuk
+ * tombol cepat di layar Pembayaran. Nilai tidak valid/duplikat/≤0 otomatis dibuang & diurutkan naik.
+ */
+fun StoreProfile.quickCashAmountList(): List<Long> =
+    quickCashAmounts.split(",")
+        .mapNotNull { it.trim().toLongOrNull() }
+        .filter { it > 0 }
+        .distinct()
+        .sorted()
 
 @Singleton
 class StoreProfileRepository @Inject constructor(
@@ -49,6 +61,7 @@ class StoreProfileRepository @Inject constructor(
         val RECEIPT_LANGUAGE = stringPreferencesKey("receipt_language")
         val TAX_ENABLED = booleanPreferencesKey("tax_enabled")
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
+        val QUICK_CASH_AMOUNTS = stringPreferencesKey("quick_cash_amounts")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -65,7 +78,8 @@ class StoreProfileRepository @Inject constructor(
             fontChoice = prefs[Keys.FONT_CHOICE] ?: "plus_jakarta_sans",
             receiptLanguage = prefs[Keys.RECEIPT_LANGUAGE] ?: "id",
             taxEnabled = prefs[Keys.TAX_ENABLED] ?: true,
-            taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0
+            taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0,
+            quickCashAmounts = prefs[Keys.QUICK_CASH_AMOUNTS] ?: "20000,50000,100000,150000,200000"
         )
     }
 
@@ -128,5 +142,10 @@ class StoreProfileRepository @Inject constructor(
             prefs[Keys.TAX_ENABLED] = enabled
             prefs[Keys.TAX_PERCENT] = percent
         }
+    }
+
+    /** @param amounts Nominal cepat Cash dipisah koma (mis. "20000,50000,100000"), lihat quickCashAmountList(). */
+    suspend fun updateQuickCashAmounts(amounts: String) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.QUICK_CASH_AMOUNTS] = amounts }
     }
 }
