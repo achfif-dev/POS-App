@@ -42,6 +42,7 @@ import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.settings.quickCashAmountList
 import com.example.posapp.domain.model.Cart
 import com.example.posapp.presentation.theme.PosBrandedTopBar
 import com.example.posapp.presentation.theme.ProductAvatar
