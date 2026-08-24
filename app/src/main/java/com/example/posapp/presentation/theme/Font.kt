@@ -33,13 +33,32 @@ private fun googleFontFamily(name: String): FontFamily {
     )
 }
 
-/** Satu opsi font yang bisa dipilih pengguna: [key] disimpan di DataStore, [label] ditampilkan di UI. */
-enum class PosFontOption(val key: String, val label: String, val family: FontFamily) {
-    PLUS_JAKARTA_SANS("plus_jakarta_sans", "Plus Jakarta Sans (Default)", googleFontFamily("Plus Jakarta Sans")),
-    INTER("inter", "Inter", googleFontFamily("Inter")),
-    POPPINS("poppins", "Poppins", googleFontFamily("Poppins")),
-    NUNITO_SANS("nunito_sans", "Nunito Sans", googleFontFamily("Nunito Sans")),
-    SYSTEM_DEFAULT("system_default", "Sistem (Roboto)", FontFamily.Default);
+/**
+ * Satu opsi font yang bisa dipilih pengguna: [key] disimpan di DataStore, [label] ditampilkan di UI.
+ *
+ * PENTING: [family] dibuat LAZY (bukan langsung sebagai constructor param) dengan sengaja.
+ * Sebelumnya setiap konstanta enum langsung memanggil googleFontFamily(...) saat class ini
+ * di-load, DAN top-level val PosFontFamily di bawah juga langsung mengakses enum ini saat
+ * class-nya sendiri (FontKt) di-load. Kombinasi dua inisialisasi "eager" yang saling
+ * mereferensikan ini memicu circular class-initialization di JVM/ART: ketika PosFontOption
+ * sedang diinisialisasi lalu tidak sengaja memicu load FontKt yang balik mengakses
+ * PosFontOption sebelum selesai, JVM/ART tidak mengulang initializer (sesuai spec) sehingga
+ * field enum masih null -> NullPointerException -> ExceptionInInitializerError (persis error
+ * yang dilaporkan). Dengan membuat family lazy per-konstanta, konstruksi FontFamily baru
+ * terjadi saat benar-benar dipakai (di Theme.kt), jauh setelah class PosFontOption selesai
+ * diinisialisasi, sehingga tidak ada lagi celah circular init.
+ */
+enum class PosFontOption(val key: String, val label: String, private val googleFontName: String?) {
+    PLUS_JAKARTA_SANS("plus_jakarta_sans", "Plus Jakarta Sans (Default)", "Plus Jakarta Sans"),
+    INTER("inter", "Inter", "Inter"),
+    POPPINS("poppins", "Poppins", "Poppins"),
+    NUNITO_SANS("nunito_sans", "Nunito Sans", "Nunito Sans"),
+    SYSTEM_DEFAULT("system_default", "Sistem (Roboto)", null);
+
+    /** Dibangun sekali saat pertama diakses (bukan saat class di-load), lalu di-cache. */
+    val family: FontFamily by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        googleFontName?.let { googleFontFamily(it) } ?: FontFamily.Default
+    }
 
     companion object {
         fun fromKey(key: String?): PosFontOption = entries.find { it.key == key } ?: PLUS_JAKARTA_SANS
@@ -47,4 +66,4 @@ enum class PosFontOption(val key: String, val label: String, val family: FontFam
 }
 
 /** Font default aplikasi bila belum ada pengaturan tersimpan (dipakai juga oleh preview & pratinjau). */
-val PosFontFamily: FontFamily = PosFontOption.PLUS_JAKARTA_SANS.family
+val PosFontFamily: FontFamily by lazy(LazyThreadSafetyMode.PUBLICATION) { PosFontOption.PLUS_JAKARTA_SANS.family }

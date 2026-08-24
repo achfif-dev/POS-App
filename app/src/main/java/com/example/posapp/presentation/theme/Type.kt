@@ -30,4 +30,4 @@ fun posTypography(fontFamily: FontFamily): Typography = Typography(
 )
 
 /** Typography default aplikasi (font Plus Jakarta Sans) — dipertahankan untuk kompatibilitas kode lama. */
-val PosTypography: Typography = posTypography(PosFontFamily)
+val PosTypography: Typography by lazy(LazyThreadSafetyMode.PUBLICATION) { posTypography(PosFontFamily) }
