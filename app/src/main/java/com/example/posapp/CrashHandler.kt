@@ -15,7 +15,7 @@ import kotlin.system.exitProcess
 /**
  * Menangkap SEMUA uncaught exception di aplikasi (bukan hanya di satu layar), lalu:
  * 1. Menyimpan detail crash ke file teks di penyimpanan internal app (untuk dilihat lagi nanti
- *    lewat file manager bila perlu, di folder Android/data/com.example.posapp*/files/crash_logs/).
+ *    lewat file manager bila perlu, di folder Android/data/[nama package aplikasi]/files/crash_logs).
  * 2. Membuka [CrashActivity] yang menampilkan detail error itu di layar, dengan tombol Bagikan —
  *    supaya pengguna TIDAK hanya melihat app "tertutup sendiri" tanpa penjelasan.
  *
