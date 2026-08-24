@@ -3,13 +3,20 @@ package com.example.posapp.presentation.report
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.auth.SessionManager
+import com.example.posapp.data.export.FileShareHelper
+import com.example.posapp.data.export.PdfInvoiceGenerator
 import com.example.posapp.data.local.dao.DailySalesSummary
 import com.example.posapp.data.local.dao.TopSellingItem
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.UserRole
+import com.example.posapp.data.printer.PrintResult
+import com.example.posapp.data.printer.PrinterRepository
+import com.example.posapp.data.repository.ExpenseRepository
 import com.example.posapp.data.repository.TransactionRepository
+import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,6 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -27,6 +36,8 @@ data class ReportUiState(
     val startMillis: Long = startOfToday(),
     val endMillis: Long = System.currentTimeMillis(),
     val summary: DailySalesSummary = DailySalesSummary(0.0, 0, 0.0),
+    val totalExpenses: Double = 0.0, // Total Beban Usaha (diprorata) untuk periode terpilih — hanya dihitung/ditampilkan untuk Admin
+    val netProfit: Double = 0.0, // Laba Bersih = Laba Kotor - Total Beban Usaha — ringkasan khusus Admin
     val topItems: List<TopSellingItem> = emptyList(),
     val transactions: List<TransactionEntity> = emptyList(), // riwayat penjualan periode terpilih
     val isAdmin: Boolean = false, // hanya Admin/Manajer yang boleh mengoreksi riwayat penjualan
@@ -42,6 +53,7 @@ data class TransactionDetailUiState(
 
 sealed class ReportEvent {
     data class ShowMessage(val message: String) : ReportEvent()
+    data class PdfReady(val file: File) : ReportEvent() // invoice PDF hasil export ulang dari Riwayat Penjualan, siap dibagikan
 }
 
 private fun startOfToday(): Long = Calendar.getInstance().apply {
@@ -51,7 +63,12 @@ private fun startOfToday(): Long = Calendar.getInstance().apply {
 @HiltViewModel
 class ReportViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
-    private val sessionManager: SessionManager
+    private val expenseRepository: ExpenseRepository,
+    private val sessionManager: SessionManager,
+    private val printerRepository: PrinterRepository,
+    private val pdfInvoiceGenerator: PdfInvoiceGenerator,
+    private val fileShareHelper: FileShareHelper,
+    private val storeProfileRepository: StoreProfileRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReportUiState())
@@ -106,8 +123,19 @@ class ReportViewModel @Inject constructor(
             val summary = transactionRepository.getSalesSummary(state.startMillis, state.endMillis)
             val topItems = transactionRepository.getTopSellingItems(state.startMillis, state.endMillis)
             val transactions = transactionRepository.observeRange(state.startMillis, state.endMillis).first()
+            // Laba Bersih hanya berguna & sensitif untuk Admin (menyingkap struktur biaya toko),
+            // jadi hitungan Beban Usaha hanya dijalankan bila user saat ini Admin — Kasir tidak
+            // pernah melihat maupun memicu perhitungan ini.
+            val totalExpenses = if (state.isAdmin) {
+                expenseRepository.getTotalForRange(state.startMillis, state.endMillis)
+            } else 0.0
             _uiState.value = _uiState.value.copy(
-                summary = summary, topItems = topItems, transactions = transactions, isLoading = false
+                summary = summary,
+                topItems = topItems,
+                transactions = transactions,
+                totalExpenses = totalExpenses,
+                netProfit = summary.totalGrossProfit - totalExpenses,
+                isLoading = false
             )
         }
     }
@@ -174,4 +202,54 @@ class ReportViewModel @Inject constructor(
             load()
         }
     }
+
+    /**
+     * Cetak ulang struk (thermal printer Bluetooth) untuk transaksi LAMA yang sedang dibuka di
+     * detail Riwayat Penjualan — dipakai saat pelanggan minta invoice/struk susulan, tidak harus
+     * langsung dicetak saat transaksi selesai. Tersedia untuk Admin maupun Kasir (bukan aksi
+     * yang mengubah data, jadi tidak perlu digembok seperti koreksi/hapus transaksi).
+     */
+    fun printTransaction() {
+        val detail = _detailState.value ?: return
+        viewModelScope.launch {
+            val profile = storeProfileRepository.profile.first()
+            val result = withContext(Dispatchers.IO) {
+                printerRepository.printReceipt(
+                    storeName = profile.name,
+                    transaction = detail.transaction,
+                    items = detail.items,
+                    storeAddress = profile.address,
+                    receiptFooter = profile.receiptFooter,
+                    logoImagePath = profile.logoImagePath,
+                    language = profile.receiptLanguage
+                )
+            }
+            when (result) {
+                is PrintResult.Success -> _events.emit(ReportEvent.ShowMessage("Struk berhasil dicetak"))
+                is PrintResult.Error -> _events.emit(ReportEvent.ShowMessage(result.message))
+            }
+        }
+    }
+
+    /** Buat ulang invoice PDF untuk transaksi lama, siap dibagikan (WhatsApp, email, dll). */
+    fun exportTransactionPdf() {
+        val detail = _detailState.value ?: return
+        viewModelScope.launch {
+            val profile = storeProfileRepository.profile.first()
+            val file = withContext(Dispatchers.IO) {
+                pdfInvoiceGenerator.generate(
+                    storeName = profile.name,
+                    transaction = detail.transaction,
+                    items = detail.items,
+                    storeAddress = profile.address,
+                    receiptFooter = profile.receiptFooter,
+                    logoImagePath = profile.logoImagePath,
+                    language = profile.receiptLanguage
+                )
+            }
+            _events.emit(ReportEvent.PdfReady(file))
+        }
+    }
+
+    fun createShareIntent(file: File) = fileShareHelper.createShareIntent(file, "application/pdf")
 }

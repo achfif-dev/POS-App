@@ -18,6 +18,7 @@ import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.presentation.auth.AuthGateViewModel
 import com.example.posapp.presentation.auth.LoginScreen
 import com.example.posapp.presentation.dashboard.DashboardScreen
+import com.example.posapp.presentation.expense.ExpenseScreen
 import com.example.posapp.presentation.pos.PosScreen
 import com.example.posapp.presentation.product.ProductScreen
 import com.example.posapp.presentation.report.ReportScreen
@@ -119,7 +120,23 @@ fun PosNavHost(sessionManager: SessionManager) {
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("reports") { ReportScreen(onBack = { navController.popBackStack() }) }
+        composable("reports") {
+            ReportScreen(
+                onBack = { navController.popBackStack() },
+                onOpenExpenses = { navController.navigate("expenses") }
+            )
+        }
+        composable("expenses") {
+            // Guard peran: Beban Usaha menyingkap struktur biaya toko, jadi hanya Admin —
+            // sama seperti guard pada route "settings" (lapisan pertahanan kedua setelah UI).
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val isAdmin = currentUser == null || currentUser?.role == UserRole.ADMIN
+            if (isAdmin) {
+                ExpenseScreen(onBack = { navController.popBackStack() })
+            } else {
+                androidx.compose.runtime.LaunchedEffect(Unit) { navController.popBackStack() }
+            }
+        }
         composable("stock") { StockScreen(onBack = { navController.popBackStack() }) }
         composable("settings") {
             // Guard peran: Kasir tidak diizinkan membuka Pengaturan (tautan pribadi/deep-link
@@ -130,7 +147,8 @@ fun PosNavHost(sessionManager: SessionManager) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenStoreProfile = { navController.navigate("store_profile") },
-                    onOpenUserManagement = { navController.navigate("user_management") }
+                    onOpenUserManagement = { navController.navigate("user_management") },
+                    onOpenExpenses = { navController.navigate("expenses") }
                 )
             } else {
                 androidx.compose.runtime.LaunchedEffect(Unit) { navController.popBackStack() }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.posapp.data.local.AppDatabase
 import com.example.posapp.data.local.dao.CategoryDao
+import com.example.posapp.data.local.dao.ExpenseDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
@@ -47,4 +48,7 @@ object DatabaseModule {
 
     @Provides
     fun provideUserDao(db: AppDatabase): UserDao = db.userDao()
+
+    @Provides
+    fun provideExpenseDao(db: AppDatabase): ExpenseDao = db.expenseDao()
 }

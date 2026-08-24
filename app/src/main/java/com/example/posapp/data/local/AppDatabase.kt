@@ -5,12 +5,15 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.example.posapp.data.local.dao.CategoryDao
+import com.example.posapp.data.local.dao.ExpenseDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.dao.UserDao
 import com.example.posapp.data.local.entity.CategoryEntity
+import com.example.posapp.data.local.entity.ExpenseEntity
+import com.example.posapp.data.local.entity.ExpensePeriod
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
@@ -33,6 +36,12 @@ class Converters {
 
     @TypeConverter
     fun toUserRole(value: String): UserRole = UserRole.valueOf(value)
+
+    @TypeConverter
+    fun fromExpensePeriod(value: ExpensePeriod): String = value.name
+
+    @TypeConverter
+    fun toExpensePeriod(value: String): ExpensePeriod = ExpensePeriod.valueOf(value)
 }
 
 @Database(
@@ -44,9 +53,10 @@ class Converters {
         StockAdjustmentEntity::class,
         ProductVariantEntity::class,
         UserEntity::class,
-        TransactionPaymentEntity::class
+        TransactionPaymentEntity::class,
+        ExpenseEntity::class
     ],
-    version = 6, // v6: tambah kolom `unit` (satuan produk: pcs/kg/liter/dus/dll) di products & unitSnapshot di transaction_items
+    version = 7, // v7: tambah tabel `expenses` (Beban Usaha) untuk fitur Laba Bersih di Laporan
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)
@@ -57,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun stockAdjustmentDao(): StockAdjustmentDao
     abstract fun productVariantDao(): ProductVariantDao
     abstract fun userDao(): UserDao
+    abstract fun expenseDao(): ExpenseDao
 
     companion object {
         const val DATABASE_NAME = "pos_database"

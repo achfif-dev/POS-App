@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.*
@@ -37,7 +38,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
     onOpenStoreProfile: () -> Unit = {},
-    onOpenUserManagement: () -> Unit = {}
+    onOpenUserManagement: () -> Unit = {},
+    onOpenExpenses: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val fileShareHelper = remember { FileShareHelper(context) }
@@ -127,6 +129,17 @@ fun SettingsScreen(
                     label = "Pengguna & Login PIN",
                     description = "Kelola kasir/admin dan aktifkan login PIN",
                     onClick = onOpenUserManagement
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SettingsSection(title = "Keuangan") {
+                SettingsNavRow(
+                    icon = Icons.Default.Receipt,
+                    label = "Beban Usaha",
+                    description = "Atur Sewa, Gaji, Listrik, dll untuk hitung Laba Bersih (khusus Admin)",
+                    onClick = onOpenExpenses
                 )
             }
 

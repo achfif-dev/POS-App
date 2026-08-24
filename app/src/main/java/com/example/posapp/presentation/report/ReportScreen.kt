@@ -1,5 +1,6 @@
 package com.example.posapp.presentation.report
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,11 +12,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -34,17 +38,39 @@ private val dateTimeFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("in",
 @Composable
 fun ReportScreen(
     viewModel: ReportViewModel = hiltViewModel(),
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onOpenExpenses: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val detailState by viewModel.detailState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) viewModel.printTransaction() }
+
+    fun requestPrint() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.BLUETOOTH_CONNECT
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted) viewModel.printTransaction() else bluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            viewModel.printTransaction()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ReportEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
+                is ReportEvent.PdfReady -> {
+                    context.startActivity(
+                        Intent.createChooser(viewModel.createShareIntent(event.file), "Bagikan Invoice PDF")
+                    )
+                }
             }
         }
     }
@@ -99,6 +125,47 @@ fun ReportScreen(
                     value = "${uiState.summary.totalTransactions}",
                     accent = MaterialTheme.colorScheme.secondary
                 )
+
+                if (uiState.isAdmin) {
+                    Spacer(Modifier.height(16.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = "Khusus Admin",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Ringkasan Laba Bersih", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Hanya terlihat oleh Admin — tidak ditampilkan ke Kasir",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            NetProfitRow("Laba Kotor", rupiah.format(uiState.summary.totalGrossProfit))
+                            Spacer(Modifier.height(6.dp))
+                            NetProfitRow("Beban Usaha (periode ini)", "- ${rupiah.format(uiState.totalExpenses)}")
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(8.dp))
+                            NetProfitRow(
+                                "Laba Bersih",
+                                rupiah.format(uiState.netProfit),
+                                emphasized = true,
+                                valueColor = if (uiState.netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedButton(onClick = onOpenExpenses, modifier = Modifier.fillMaxWidth()) {
+                                Text("Kelola Beban Usaha")
+                            }
+                        }
+                    }
+                }
 
                 Spacer(Modifier.height(24.dp))
                 Text("Produk Terlaris", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -193,7 +260,9 @@ fun ReportScreen(
             onSave = { updatedTransaction, updatedItems, deletedItemIds ->
                 viewModel.saveTransactionCorrection(updatedTransaction, updatedItems, deletedItemIds)
             },
-            onDeleteRequest = { showDeleteConfirm = true }
+            onDeleteRequest = { showDeleteConfirm = true },
+            onPrint = { requestPrint() },
+            onExportPdf = { viewModel.exportTransactionPdf() }
         )
     }
 
@@ -262,7 +331,9 @@ private fun TransactionDetailDialog(
     isAdmin: Boolean,
     onDismiss: () -> Unit,
     onSave: (TransactionEntity, List<TransactionItemEntity>, List<Long>) -> Unit,
-    onDeleteRequest: () -> Unit
+    onDeleteRequest: () -> Unit,
+    onPrint: () -> Unit,
+    onExportPdf: () -> Unit
 ) {
     val transaction = detail.transaction
     var note by remember(transaction.id) { mutableStateOf(transaction.note.orEmpty()) }
@@ -372,6 +443,32 @@ private fun TransactionDetailDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
+                Text(
+                    "Kirim Invoice",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Bisa dicetak/dibagikan kapan saja, tidak harus saat transaksi selesai",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onPrint, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Cetak Struk")
+                    }
+                    OutlinedButton(onClick = onExportPdf, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Bagikan PDF")
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Total", fontWeight = FontWeight.Bold)
                     Text(rupiah.format(total), fontWeight = FontWeight.Bold)
@@ -434,6 +531,28 @@ private fun TransactionDetailDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NetProfitRow(
+    label: String,
+    value: String,
+    emphasized: Boolean = false,
+    valueColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            label,
+            style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+            fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal
+        )
+        Text(
+            value,
+            style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+            fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Medium,
+            color = valueColor
+        )
     }
 }
 
