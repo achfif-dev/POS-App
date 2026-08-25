@@ -18,7 +18,8 @@ import javax.inject.Inject
 
 data class UserManagementUiState(
     val users: List<UserEntity> = emptyList(),
-    val pinLoginEnabled: Boolean = false
+    val pinLoginEnabled: Boolean = false,
+    val autoLockMinutes: Int = 5
 )
 
 sealed class UserManagementEvent {
@@ -37,7 +38,11 @@ class UserManagementViewModel @Inject constructor(
     val uiState: StateFlow<UserManagementUiState> = combine(
         userRepository.observeAll(), storeProfileRepository.profile
     ) { users, profile ->
-        UserManagementUiState(users = users, pinLoginEnabled = profile.pinLoginEnabled)
+        UserManagementUiState(
+            users = users,
+            pinLoginEnabled = profile.pinLoginEnabled,
+            autoLockMinutes = profile.autoLockMinutes
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserManagementUiState())
 
     fun setPinLoginEnabled(enabled: Boolean) {
@@ -48,6 +53,11 @@ class UserManagementViewModel @Inject constructor(
             }
             storeProfileRepository.setPinLoginEnabled(enabled)
         }
+    }
+
+    /** @param minutes 0 untuk mematikan auto-lock idle (kunci-saat-background tetap selalu aktif). */
+    fun setAutoLockMinutes(minutes: Int) {
+        viewModelScope.launch { storeProfileRepository.updateAutoLockMinutes(minutes) }
     }
 
     fun addUser(name: String, pin: String, role: UserRole) {

@@ -46,9 +46,8 @@ tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung
 - **Riwayat penyesuaian stok per varian** belum ada di layar Stok (saat ini penyesuaian stok
   manual di layar Stok hanya untuk produk tanpa varian; stok varian diatur lewat dialog "Kelola
   Varian" di Manajemen Produk).
-- **Role-based permission** — role Admin/Kasir sudah tersimpan di database tapi belum membatasi
-  akses menu tertentu (mis. Kasir tidak bisa masuk Pengaturan). Bisa ditambahkan dengan mengecek
-  `SessionManager.currentUser.value?.role` di navigasi.
+- **Role-based permission** — sudah ditegakkan penuh lewat `domain/auth/Permission.kt` (lihat
+  catatan teknis di atas), baik di navigasi maupun di setiap fungsi mutasi ViewModel.
 - **QRIS dinamis** (generate QR per transaksi) belum ada — saat ini QRIS berupa gambar statis
   yang diunggah pemilik toko.
 
@@ -75,6 +74,19 @@ tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung
 - PIN pengguna disimpan sebagai hash SHA-256 (`UserRepository`), bukan plaintext. Sesi login
   bersifat in-memory (`SessionManager`) sehingga aplikasi akan meminta PIN lagi setiap kali
   dibuka ulang selama fitur "Login PIN" aktif di Pengaturan > Pengguna & Login PIN.
+- **Auto-Lock (`AutoLockManager`)**: selama fitur PIN aktif, sesi otomatis logout (a) begitu
+  app kembali dibuka setelah sempat di-background — Home/app-switch/layar mati (tidak bisa
+  dimatikan), dan (b) setelah idle beberapa menit di foreground (bisa diatur di Pengaturan >
+  Pengguna & Login PIN: mati/1/5/15/30 menit, default 5 menit).
+- **Role-based permission ditegakkan** lewat `domain/auth/Permission.kt` sebagai satu sumber
+  kebenaran, dicek ulang baik di nav-graph (guard route, fail-closed) maupun di dalam setiap
+  fungsi mutasi ViewModel (bukan cuma sembunyi tombol) — termasuk stok opname (admin-only),
+  harga beli/margin produk (disembunyikan dari kasir), dan manajemen produk/kategori/varian.
+- **Backup terenkripsi**: `BackupRepository` + `BackupCrypto` mengenkripsi file backup dengan
+  AES-256-GCM (kunci diturunkan dari password lewat PBKDF2WithHmacSHA256), ekstensi `.posbak`.
+  Password wajib diisi saat backup dibuat & saat restore, TIDAK disimpan aplikasi di mana pun.
+  Restore tetap mendukung file `.db` mentah dari versi app sebelumnya tanpa password (dideteksi
+  lewat isi file, bukan ekstensi nama file).
 - Izin runtime yang diminta: Kamera (scan barcode) dan Bluetooth Connect/Scan (Android 12+,
   untuk cetak struk). Printer harus sudah di-pair lewat pengaturan Bluetooth sistem terlebih
   dahulu sebelum mencetak dari app.

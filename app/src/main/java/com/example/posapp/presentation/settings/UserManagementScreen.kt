@@ -81,6 +81,32 @@ fun UserManagementScreen(
                 }
             }
 
+            if (uiState.pinLoginEnabled) {
+                Spacer(Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Auto-Lock Idle", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Otomatis logout kalau app tidak disentuh selama durasi ini. " +
+                                "Terpisah dari kunci-saat-app-ditutup yang selalu aktif.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0 to "Mati", 1 to "1 mnt", 5 to "5 mnt", 15 to "15 mnt", 30 to "30 mnt")
+                                .forEach { (minutes, label) ->
+                                    FilterChip(
+                                        selected = uiState.autoLockMinutes == minutes,
+                                        onClick = { viewModel.setAutoLockMinutes(minutes) },
+                                        label = { Text(label) }
+                                    )
+                                }
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
             Text("Daftar Pengguna", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))

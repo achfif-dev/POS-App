@@ -50,9 +50,9 @@ class SettingsViewModel @Inject constructor(
         _backups.value = backupRepository.listLocalBackups()
     }
 
-    fun backupNow() {
+    fun backupNow(password: String) {
         viewModelScope.launch {
-            when (val result = withContext(Dispatchers.IO) { backupRepository.backup() }) {
+            when (val result = withContext(Dispatchers.IO) { backupRepository.backup(password) }) {
                 is BackupResult.Success -> {
                     refreshBackups()
                     _events.emit(SettingsEvent.ExportReady(result.file, "application/octet-stream"))
@@ -62,9 +62,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun restoreFrom(file: File) {
+    fun restoreFrom(file: File, password: String) {
         viewModelScope.launch {
-            when (val result = withContext(Dispatchers.IO) { backupRepository.restore(file) }) {
+            when (val result = withContext(Dispatchers.IO) { backupRepository.restore(file, password) }) {
                 is BackupResult.Success -> _events.emit(
                     SettingsEvent.ShowMessage("Restore berhasil. Silakan tutup dan buka ulang aplikasi.")
                 )
@@ -74,6 +74,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun listLocalBackups(): List<File> = backupRepository.listLocalBackups()
+
+    /** Dipakai UI untuk memutuskan apakah dialog restore perlu menampilkan kolom password. */
+    fun isEncryptedBackup(file: File): Boolean = backupRepository.isEncryptedBackup(file)
 
     /** Hapus satu file backup lokal dari Riwayat Backup Lokal (tidak memengaruhi data aplikasi). */
     fun deleteBackup(file: File) {

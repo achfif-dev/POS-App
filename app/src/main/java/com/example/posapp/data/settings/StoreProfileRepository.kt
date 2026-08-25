@@ -29,7 +29,12 @@ data class StoreProfile(
     val receiptLanguage: String = "id", // bahasa struk & invoice PDF: "id" (Indonesia) atau "en" (English)
     val taxEnabled: Boolean = true, // matikan untuk toko yang tidak memungut pajak/PPN
     val taxPercent: Double = 11.0, // persentase pajak/PPN yang dipakai saat taxEnabled = true
-    val quickCashAmounts: String = "20000,50000,100000,150000,200000" // nominal cepat Cash, dipisah koma; lihat quickCashAmountList()
+    val quickCashAmounts: String = "20000,50000,100000,150000,200000", // nominal cepat Cash, dipisah koma; lihat quickCashAmountList()
+    /** Menit tanpa aktivitas sebelum sesi kasir/admin otomatis logout (minta PIN lagi).
+     * 0 = mati (tidak ada auto-lock idle). Hanya berlaku efektif saat [pinLoginEnabled] aktif —
+     * lihat AutoLockManager. Terpisah dari kunci-saat-app-di-background yang SELALU aktif
+     * ketika PIN login aktif (tidak bisa dimatikan, karena itu risiko keamanan fisik utama). */
+    val autoLockMinutes: Int = 5
 )
 
 /**
@@ -62,6 +67,7 @@ class StoreProfileRepository @Inject constructor(
         val TAX_ENABLED = booleanPreferencesKey("tax_enabled")
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
         val QUICK_CASH_AMOUNTS = stringPreferencesKey("quick_cash_amounts")
+        val AUTO_LOCK_MINUTES = androidx.datastore.preferences.core.intPreferencesKey("auto_lock_minutes")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -79,7 +85,8 @@ class StoreProfileRepository @Inject constructor(
             receiptLanguage = prefs[Keys.RECEIPT_LANGUAGE] ?: "id",
             taxEnabled = prefs[Keys.TAX_ENABLED] ?: true,
             taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0,
-            quickCashAmounts = prefs[Keys.QUICK_CASH_AMOUNTS] ?: "20000,50000,100000,150000,200000"
+            quickCashAmounts = prefs[Keys.QUICK_CASH_AMOUNTS] ?: "20000,50000,100000,150000,200000",
+            autoLockMinutes = prefs[Keys.AUTO_LOCK_MINUTES] ?: 5
         )
     }
 
@@ -147,5 +154,10 @@ class StoreProfileRepository @Inject constructor(
     /** @param amounts Nominal cepat Cash dipisah koma (mis. "20000,50000,100000"), lihat quickCashAmountList(). */
     suspend fun updateQuickCashAmounts(amounts: String) {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.QUICK_CASH_AMOUNTS] = amounts }
+    }
+
+    /** @param minutes 0 untuk mematikan auto-lock idle; nilai umum: 1, 5, 15, 30. */
+    suspend fun updateAutoLockMinutes(minutes: Int) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.AUTO_LOCK_MINUTES] = minutes.coerceAtLeast(0) }
     }
 }

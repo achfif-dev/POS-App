@@ -48,6 +48,7 @@ fun SettingsScreen(
     var showRestorePicker by remember { mutableStateOf(false) }
     var backupPendingRestore by remember { mutableStateOf<File?>(null) }
     var backupPendingDelete by remember { mutableStateOf<File?>(null) }
+    var showBackupPasswordDialog by remember { mutableStateOf(false) }
 
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -55,7 +56,10 @@ fun SettingsScreen(
             context.contentResolver.openInputStream(uri)?.use { input ->
                 tempFile.outputStream().use { output -> input.copyTo(output) }
             }
-            viewModel.restoreFrom(tempFile)
+            // Diarahkan lewat state yang sama dengan restore dari Riwayat Backup Lokal, supaya
+            // dialog konfirmasi + (kalau perlu) kolom password ditampilkan konsisten untuk
+            // kedua jalur — bukan langsung di-restore tanpa konfirmasi seperti sebelumnya.
+            backupPendingRestore = tempFile
         }
     }
 
@@ -148,12 +152,12 @@ fun SettingsScreen(
             SettingsSection(title = "Backup & Restore") {
                 SettingsActionRow(
                     label = "Backup Database Sekarang",
-                    description = "Menyimpan salinan database ke penyimpanan lokal & bisa dibagikan",
-                    onClick = { viewModel.backupNow() }
+                    description = "Backup terenkripsi password ke penyimpanan lokal & bisa dibagikan",
+                    onClick = { showBackupPasswordDialog = true }
                 )
                 SettingsActionRow(
                     label = "Restore dari File Backup",
-                    description = "Pilih file .db backup untuk mengembalikan data",
+                    description = "Pilih file .posbak (atau .db lama) untuk mengembalikan data",
                     onClick = { showRestorePicker = true }
                 )
             }
@@ -229,18 +233,23 @@ fun SettingsScreen(
     }
 
     backupPendingRestore?.let { file ->
-        AlertDialog(
-            onDismissRequest = { backupPendingRestore = null },
-            title = { Text("Restore dari backup ini?") },
-            text = { Text("Data saat ini akan digantikan oleh isi \"${file.name}\". Aplikasi perlu dibuka ulang setelah restore.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.restoreFrom(file)
-                    backupPendingRestore = null
-                }) { Text("Restore") }
-            },
-            dismissButton = {
-                TextButton(onClick = { backupPendingRestore = null }) { Text("Batal") }
+        RestoreConfirmDialog(
+            file = file,
+            isEncrypted = remember(file) { viewModel.isEncryptedBackup(file) },
+            onDismiss = { backupPendingRestore = null },
+            onConfirm = { password ->
+                viewModel.restoreFrom(file, password)
+                backupPendingRestore = null
+            }
+        )
+    }
+
+    if (showBackupPasswordDialog) {
+        BackupPasswordCreateDialog(
+            onDismiss = { showBackupPasswordDialog = false },
+            onConfirm = { password ->
+                viewModel.backupNow(password)
+                showBackupPasswordDialog = false
             }
         )
     }
@@ -310,6 +319,116 @@ private fun SettingsActionRow(label: String, description: String, onClick: () ->
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** Dialog untuk membuat password backup baru (dengan konfirmasi ketik ulang, supaya salah ketik
+ * tidak berujung punya backup yang tidak bisa dibuka lagi karena password tidak diingat persis). */
+@Composable
+private fun BackupPasswordCreateDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (password: String) -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+
+    val tooShort = password.isNotEmpty() && password.length < 6
+    val mismatch = confirmPassword.isNotEmpty() && password != confirmPassword
+    val canConfirm = password.length >= 6 && password == confirmPassword
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Amankan Backup dengan Password") },
+        text = {
+            Column {
+                Text(
+                    "Backup akan dienkripsi. Simpan password ini baik-baik — tanpa password ini " +
+                        "backup TIDAK bisa dipulihkan lagi.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password (min 6 karakter)") },
+                    singleLine = true,
+                    isError = tooShort,
+                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None
+                        else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showPassword = !showPassword }) {
+                            Text(if (showPassword) "Sembunyikan" else "Lihat")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it },
+                    label = { Text("Ulangi Password") },
+                    singleLine = true,
+                    isError = mismatch,
+                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None
+                        else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (mismatch) {
+                    Text("Password tidak sama", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(password) }, enabled = canConfirm) { Text("Buat Backup") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
+}
+
+/** Dialog konfirmasi restore — menampilkan kolom password hanya kalau file backup yang dipilih
+ * memang terenkripsi (dideteksi lewat isi file, lihat BackupRepository.isEncryptedBackup). File
+ * backup lama (mentah, dari versi app sebelum fitur enkripsi) tetap bisa direstore tanpa password. */
+@Composable
+private fun RestoreConfirmDialog(
+    file: File,
+    isEncrypted: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (password: String) -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Restore dari backup ini?") },
+        text = {
+            Column {
+                Text("Data saat ini akan digantikan oleh isi \"${file.name}\". Aplikasi perlu dibuka ulang setelah restore.")
+                if (isEncrypted) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password Backup") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(password) },
+                enabled = !isEncrypted || password.isNotBlank()
+            ) { Text("Restore") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
 }
 
 @Composable
