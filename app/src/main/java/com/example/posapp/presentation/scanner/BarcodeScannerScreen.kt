@@ -7,6 +7,7 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.lifecycle.awaitInstance
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -72,60 +73,68 @@ fun BarcodeScannerScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (hasCameraPermission) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    val previewView = PreviewView(ctx)
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    val executor = Executors.newSingleThreadExecutor()
-                    val scanner = BarcodeScanning.getClient()
+            val previewView = remember { PreviewView(context) }
+            val executor = remember { Executors.newSingleThreadExecutor() }
+            val scanner = remember { BarcodeScanning.getClient() }
 
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-
-                        val preview = Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-
-                        val analysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-
-                        analysis.setAnalyzer(executor) { imageProxy ->
-                            val mediaImage = imageProxy.image
-                            if (mediaImage != null && !hasHandledResult) {
-                                val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                scanner.process(inputImage)
-                                    .addOnSuccessListener { barcodes: List<Barcode> ->
-                                        val value = barcodes.firstOrNull()?.rawValue
-                                        if (value != null && !hasHandledResult) {
-                                            hasHandledResult = true
-                                            onBarcodeDetected(value)
-                                        }
-                                    }
-                                    .addOnCompleteListener { imageProxy.close() }
-                            } else {
-                                imageProxy.close()
-                            }
-                        }
-
-                        try {
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                analysis
-                            )
-                        } catch (e: Exception) {
-                            // Kamera gagal di-bind (mis. device tanpa kamera belakang) — abaikan,
-                            // pengguna tetap bisa kembali dan input SKU manual.
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-
-                    previewView
+            DisposableEffect(Unit) {
+                onDispose {
+                    executor.shutdown()
+                    scanner.close()
                 }
-            )
+            }
+
+            // Dulu pakai ProcessCameraProvider.getInstance(ctx).addListener(...) yang
+            // mengembalikan com.google.common.util.concurrent.ListenableFuture (Guava) —
+            // gampang bentrok begitu dependency lain (mis. Firebase) menarik versi Guava
+            // berbeda ke classpath ("Cannot access class ListenableFuture"). awaitInstance()
+            // adalah API resmi CameraX yang membungkus Future itu di baliknya, jadi kode kita
+            // sendiri TIDAK PERNAH menyentuh tipe ListenableFuture sama sekali -- kebal dari
+            // konflik Guava di atas, apa pun versi yang akhirnya dipilih Gradle.
+            LaunchedEffect(hasCameraPermission) {
+                try {
+                    val cameraProvider = ProcessCameraProvider.awaitInstance(context)
+
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+
+                    analysis.setAnalyzer(executor) { imageProxy ->
+                        val mediaImage = imageProxy.image
+                        if (mediaImage != null && !hasHandledResult) {
+                            val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                            scanner.process(inputImage)
+                                .addOnSuccessListener { barcodes: List<Barcode> ->
+                                    val value = barcodes.firstOrNull()?.rawValue
+                                    if (value != null && !hasHandledResult) {
+                                        hasHandledResult = true
+                                        onBarcodeDetected(value)
+                                    }
+                                }
+                                .addOnCompleteListener { imageProxy.close() }
+                        } else {
+                            imageProxy.close()
+                        }
+                    }
+
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        analysis
+                    )
+                } catch (e: Exception) {
+                    // Kamera gagal di-bind (mis. device tanpa kamera belakang) — abaikan,
+                    // pengguna tetap bisa kembali dan input SKU manual.
+                }
+            }
+
+            AndroidView(modifier = Modifier.fillMaxSize(), factory = { previewView })
 
             // Scrim gradasi tipis di atas & bawah agar kontrol tetap terbaca tanpa
             // menutupi preview kamera dengan bar solid tebal.
