@@ -6,6 +6,14 @@ plugins {
     kotlin("plugin.serialization") version "1.9.24"
 }
 
+// Sinkronisasi Cloud (Fase 4 - lihat FIREBASE_SETUP.md) BUTUH proyek Firebase sendiri, yang
+// tidak bisa dibuatkan otomatis dari sini. Plugin google-services HANYA diterapkan kalau file
+// konfigurasinya sudah ada, supaya siapa pun yang clone/upload ulang repo ini tanpa membuat
+// proyek Firebase dulu TETAP bisa build normal (fitur cloud sync otomatis nonaktif, bukan error).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Kredensial keystore release DIBACA DARI ENVIRONMENT VARIABLE, bukan di-hardcode di sini
 // atau di gradle.properties yang ikut ter-commit — supaya aman untuk repo publik/privat.
 // Di GitHub Actions, env var ini diisi dari GitHub Secrets (lihat android_build.yml).
@@ -27,11 +35,16 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.posapp"
+        // CATATAN: applicationId sengaja dipisah dari `namespace` (yang masih com.example.posapp
+        // dan HANYA menentukan package R/BuildConfig internal, aman dibiarkan). applicationId inilah
+        // identitas app yang publik/dipakai Play Store & dilihat pengguna — com.example.* ditolak
+        // Play Store dan tidak profesional untuk app yang mau disewakan ke toko lain. Ganti
+        // "id.gwg.posapp" di bawah sesuai domain/brand Anda sendiri sebelum rilis publik.
+        applicationId = "id.gwg.posapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -139,8 +152,16 @@ dependencies {
     // DataStore (profil toko, preferensi login PIN, dsb.)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Sinkronisasi Cloud lintas cabang (Fase 4 - opsional, nonaktif sampai google-services.json
+    // ada & toggle "Sinkronisasi Cloud" dinyalakan Admin di Pengaturan). Lihat FIREBASE_SETUP.md.
+    // Dependency ini AMAN ditambahkan walau belum ada proyek Firebase — hanya dipakai (dan hanya
+    // butuh config valid) saat runtime memanggilnya, bukan saat compile.
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-auth-ktx")
+
     // Testing
-    testImplementation("junit:junit:4.13.2")
+    testImplementation("junit:junit:4.13.2") // termasuk org.junit.rules.TemporaryFolder dipakai BackupCryptoTest
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
