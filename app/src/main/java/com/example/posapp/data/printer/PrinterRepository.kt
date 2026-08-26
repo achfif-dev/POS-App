@@ -68,6 +68,16 @@ class PrinterRepository @Inject constructor(
      * (mis. printer itu sudah di-unpair), fallback ke printer ter-pairing pertama seperti biasa.
      */
     private fun selectConnection(printerName: String?): BluetoothConnection? {
+        // Pengecekan izin di FUNGSI INI SENDIRI (bukan cuma di printReceipt yang memanggilnya) —
+        // Lint (MissingPermission) butuh bukti pengecekan izin di scope yang sama dengan
+        // pemanggilan API yang butuh BLUETOOTH_CONNECT (device.name), persis pola yang sudah
+        // dipakai di listPairedPrinters().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return null
+        }
         val allPaired = try {
             BluetoothPrintersConnections().list
         } catch (e: Exception) {
