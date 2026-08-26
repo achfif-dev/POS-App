@@ -28,8 +28,10 @@ interface ProductVariantDao {
     @Query("UPDATE product_variants SET isActive = 0 WHERE id = :id")
     suspend fun softDelete(id: Long)
 
-    @Query("UPDATE product_variants SET stock = stock - :qty WHERE id = :variantId")
-    suspend fun decreaseStock(variantId: Long, qty: Int)
+    // Lihat catatan di ProductDao.decreaseStock: guard stok >= qty + return jumlah baris
+    // terdampak, supaya kekurangan stok bisa membatalkan seluruh transaksi checkout.
+    @Query("UPDATE product_variants SET stock = stock - :qty WHERE id = :variantId AND stock >= :qty")
+    suspend fun decreaseStock(variantId: Long, qty: Int): Int
 
     @Query("UPDATE product_variants SET stock = stock + :qty WHERE id = :variantId")
     suspend fun increaseStock(variantId: Long, qty: Int)

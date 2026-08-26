@@ -525,6 +525,58 @@ fun StoreProfileScreen(
                             label = { Text("English") }
                         )
                     }
+
+                    Spacer(Modifier.height(20.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Printer Struk", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Pilih printer Bluetooth mana yang dipakai untuk cetak struk, kalau HP ini sudah di-pairing dengan lebih dari satu printer",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    var pairedPrinters by remember { mutableStateOf(viewModel.listPairedPrinters()) }
+                    if (pairedPrinters.isEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Belum ada printer Bluetooth yang di-pairing. Pairing dulu lewat Pengaturan Bluetooth Android.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Muat Ulang")
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            pairedPrinters.forEach { printerName ->
+                                val isSelected = profile.selectedPrinterName == printerName
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewModel.setSelectedPrinter(printerName) }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(selected = isSelected, onClick = { viewModel.setSelectedPrinter(printerName) })
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(printerName)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Muat Ulang Daftar Printer")
+                        }
+                    }
                 }
             }
         }

@@ -157,7 +157,8 @@ class PosViewModel @Inject constructor(
                     storeAddress = profile.address,
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
-                    language = profile.receiptLanguage
+                    language = profile.receiptLanguage,
+                    printerName = profile.selectedPrinterName
                 )
             }
             when (result) {

@@ -27,9 +27,14 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
-            // Full offline app: tidak ada sinkronisasi server, aman melakukan migrasi destruktif
-            // selama pengembangan awal. Ganti dengan Migration resmi sebelum rilis produksi.
-            .fallbackToDestructiveMigration()
+            // Migrasi resmi wajib untuk setiap kenaikan versi (lihat Migrations.kt) — database
+            // ini sudah dipakai di instalasi nyata, migrasi destruktif akan menghapus seluruh
+            // data toko (produk, transaksi, stok, piutang) begitu skema berubah.
+            .addMigrations(com.example.posapp.data.local.MIGRATION_9_10)
+            // Hanya untuk skenario downgrade (mis. pasang ulang APK versi lama secara tidak
+            // sengaja) — kasus langka yang aman diberi fallback destruktif karena versi
+            // skema yang lebih baru tidak mungkin dibaca oleh kode yang lebih lama.
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
     }
 

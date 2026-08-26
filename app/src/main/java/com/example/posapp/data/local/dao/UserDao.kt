@@ -10,8 +10,11 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE isActive = 1 ORDER BY role ASC, name ASC")
     fun observeAll(): Flow<List<UserEntity>>
 
-    @Query("SELECT * FROM users WHERE isActive = 1 AND pinHash = :pinHash LIMIT 1")
-    suspend fun findByPinHash(pinHash: String): UserEntity?
+    // Setiap user punya salt sendiri (PBKDF2), jadi hash PIN tidak bisa dicocokkan lewat WHERE
+    // di SQL secara langsung — verifikasi dilakukan di UserRepository per-user dengan salt-nya
+    // masing-masing. Jumlah user di satu toko kecil (kasir/admin), jadi ini tetap murah.
+    @Query("SELECT * FROM users WHERE isActive = 1")
+    suspend fun getAllActive(): List<UserEntity>
 
     @Query("SELECT COUNT(*) FROM users WHERE isActive = 1")
     suspend fun countActive(): Int

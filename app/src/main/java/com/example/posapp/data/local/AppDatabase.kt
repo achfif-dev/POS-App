@@ -71,7 +71,7 @@ class Converters {
         CustomerEntity::class,
         DebtPaymentEntity::class
     ],
-    version = 9, // v9: tambah tabel `customers`/`debt_payments` + kolom transactions.customerId (piutang/Bon)
+    version = 10, // v10: users.pinSalt (migrasi hash PIN ke PBKDF2 bergaram) + unique index invoiceNumber
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)

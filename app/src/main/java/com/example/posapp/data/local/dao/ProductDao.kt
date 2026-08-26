@@ -37,8 +37,12 @@ interface ProductDao {
     @Query("UPDATE products SET isActive = 0 WHERE id = :id")
     suspend fun softDelete(id: Long)
 
-    @Query("UPDATE products SET stock = stock - :qty, updatedAt = :now WHERE id = :productId")
-    suspend fun decreaseStock(productId: Long, qty: Int, now: Long = System.currentTimeMillis())
+    // WHERE stock >= :qty mencegah stok jadi minus akibat race condition/data stale (mis. dua
+    // checkout hampir bersamaan). Mengembalikan jumlah baris terdampak (0 = stok tidak cukup
+    // SAAT INI di DB, bukan cuma snapshot keranjang) supaya pemanggil (TransactionRepository)
+    // bisa membatalkan seluruh transaksi kalau stok ternyata kurang.
+    @Query("UPDATE products SET stock = stock - :qty, updatedAt = :now WHERE id = :productId AND stock >= :qty")
+    suspend fun decreaseStock(productId: Long, qty: Int, now: Long = System.currentTimeMillis()): Int
 
     @Query("UPDATE products SET stock = stock + :qty, updatedAt = :now WHERE id = :productId")
     suspend fun increaseStock(productId: Long, qty: Int, now: Long = System.currentTimeMillis())

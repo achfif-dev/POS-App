@@ -2,6 +2,7 @@ package com.example.posapp.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.printer.PrinterRepository
 import com.example.posapp.data.qris.QrisImageDecoder
 import com.example.posapp.data.settings.StoreProfile
 import com.example.posapp.data.settings.StoreProfileRepository
@@ -23,7 +24,8 @@ sealed class StoreProfileEvent {
 @HiltViewModel
 class StoreProfileViewModel @Inject constructor(
     private val storeProfileRepository: StoreProfileRepository,
-    private val qrisImageDecoder: QrisImageDecoder
+    private val qrisImageDecoder: QrisImageDecoder,
+    private val printerRepository: PrinterRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<StoreProfile> = storeProfileRepository.profile
@@ -137,6 +139,22 @@ class StoreProfileViewModel @Inject constructor(
             val updated = current.filter { it != amount }
             storeProfileRepository.updateQuickCashAmounts(updated.joinToString(","))
             _events.emit(StoreProfileEvent.ShowMessage("Nominal cepat dihapus"))
+        }
+    }
+
+    /** Daftar nama printer Bluetooth yang sudah di-pair di sistem, untuk pilihan di UI Pengaturan
+     * (dulu fungsi ini sudah ada di PrinterRepository tapi tidak pernah dipakai di mana pun —
+     * struk selalu tercetak ke printer pertama yang ditemukan walau toko punya >1 printer). */
+    fun listPairedPrinters(): List<String> = printerRepository.listPairedPrinters()
+
+    /** @param name Nama printer yang dipilih pengguna dari [listPairedPrinters], atau null untuk
+     * kembali ke perilaku default (pakai printer ter-pairing pertama). */
+    fun setSelectedPrinter(name: String?) {
+        viewModelScope.launch {
+            storeProfileRepository.setSelectedPrinterName(name)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (name != null) "Printer struk diatur ke \"$name\"" else "Kembali memakai printer ter-pairing pertama")
+            )
         }
     }
 }

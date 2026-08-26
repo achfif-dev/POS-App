@@ -17,7 +17,7 @@ enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS, BON, MIXED } // MIXED = spl
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("customerId")]
+    indices = [Index("customerId"), Index("invoiceNumber", unique = true)]
 )
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

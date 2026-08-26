@@ -60,6 +60,25 @@ class PrinterRepository @Inject constructor(
         }
     }
 
+    /**
+     * Sebelumnya SELALU memakai [BluetoothPrintersConnections.selectFirstPaired] walau
+     * [listPairedPrinters] menampilkan semua printer ter-pairing — kalau toko punya >1 printer,
+     * pengguna tidak pernah bisa benar-benar memilih yang mana dipakai. Sekarang cocokkan dulu
+     * dengan [printerName] yang tersimpan di Pengaturan; kalau tidak diisi atau tidak ketemu
+     * (mis. printer itu sudah di-unpair), fallback ke printer ter-pairing pertama seperti biasa.
+     */
+    private fun selectConnection(printerName: String?): BluetoothConnection? {
+        val allPaired = try {
+            BluetoothPrintersConnections().list
+        } catch (e: Exception) {
+            null
+        }
+        if (!printerName.isNullOrBlank()) {
+            allPaired?.firstOrNull { it.device.name == printerName }?.let { return it }
+        }
+        return BluetoothPrintersConnections.selectFirstPaired()
+    }
+
     fun printReceipt(
         storeName: String,
         transaction: TransactionEntity,
@@ -67,7 +86,8 @@ class PrinterRepository @Inject constructor(
         storeAddress: String = "",
         receiptFooter: String = "Terima kasih!",
         logoImagePath: String? = null,
-        language: String = "id"
+        language: String = "id",
+        printerName: String? = null
     ): PrintResult {
         val strings = ReceiptStrings.forLanguage(language)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -77,7 +97,7 @@ class PrinterRepository @Inject constructor(
             return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
         }
         return try {
-            val connection: BluetoothConnection = BluetoothPrintersConnections.selectFirstPaired()
+            val connection: BluetoothConnection = selectConnection(printerName)
                 ?: return PrintResult.Error("Tidak ada printer Bluetooth yang terpasang/di-pair")
 
             // 384 dots ~ printer thermal 58mm umum. Ganti ke 576 untuk printer 80mm.

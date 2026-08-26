@@ -1,5 +1,6 @@
 package com.example.posapp.domain.usecase
 
+import android.database.sqlite.SQLiteConstraintException
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
@@ -42,24 +43,8 @@ class CheckoutUseCase @Inject constructor(
 
         val validPayments = payments.filter { it.amount > 0 }
         val totalPaid = CheckoutValidator.totalPaid(validPayments)
-        val invoiceNumber = generateInvoiceNumber()
         val change = (totalPaid - cart.total).coerceAtLeast(0.0)
         val primaryMethod = if (validPayments.size == 1) validPayments.first().method else PaymentMethod.MIXED
-
-        val transaction = TransactionEntity(
-            invoiceNumber = invoiceNumber,
-            subtotal = cart.subtotal,
-            taxPercent = cart.taxPercent,
-            taxAmount = cart.taxAmount,
-            discountAmount = cart.transactionDiscount,
-            total = cart.total,
-            paymentMethod = primaryMethod,
-            amountPaid = totalPaid,
-            changeAmount = change,
-            note = note,
-            cashierName = cashierName,
-            customerId = customerId
-        )
 
         val items = cart.lines.map { line ->
             TransactionItemEntity(
@@ -80,16 +65,46 @@ class CheckoutUseCase @Inject constructor(
             TransactionPaymentEntity(transactionId = 0, method = it.method, amount = it.amount)
         }
 
-        return try {
-            val txId = transactionRepository.checkout(transaction, items, paymentEntities)
-            CheckoutResult.Success(txId, invoiceNumber, change)
-        } catch (e: Exception) {
-            CheckoutResult.Error(e.message ?: "Gagal menyimpan transaksi")
+        // `transactions.invoiceNumber` punya unique index di DB (lihat Migrations.kt). Nomor
+        // invoice sudah dibuat presisi milidetik + sufiks acak supaya tabrakan nyaris mustahil,
+        // tapi tetap coba ulang beberapa kali dengan nomor baru kalau entah bagaimana tetap
+        // bentrok (mis. jam sistem device diubah manual), daripada checkout gagal total.
+        var lastError: Exception? = null
+        repeat(MAX_INVOICE_RETRY) {
+            val invoiceNumber = generateInvoiceNumber()
+            val transaction = TransactionEntity(
+                invoiceNumber = invoiceNumber,
+                subtotal = cart.subtotal,
+                taxPercent = cart.taxPercent,
+                taxAmount = cart.taxAmount,
+                discountAmount = cart.transactionDiscount,
+                total = cart.total,
+                paymentMethod = primaryMethod,
+                amountPaid = totalPaid,
+                changeAmount = change,
+                note = note,
+                cashierName = cashierName,
+                customerId = customerId
+            )
+            try {
+                val txId = transactionRepository.checkout(transaction, items, paymentEntities)
+                return CheckoutResult.Success(txId, invoiceNumber, change)
+            } catch (e: SQLiteConstraintException) {
+                lastError = e // nomor invoice bentrok, ulangi dengan nomor baru
+            } catch (e: Exception) {
+                return CheckoutResult.Error(e.message ?: "Gagal menyimpan transaksi")
+            }
         }
+        return CheckoutResult.Error(lastError?.message ?: "Gagal menyimpan transaksi (nomor invoice bentrok)")
     }
 
     private fun generateInvoiceNumber(): String {
-        val datePart = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())
-        return "INV-$datePart"
+        val datePart = SimpleDateFormat("yyyyMMdd-HHmmssSSS", Locale.getDefault()).format(Date())
+        val randomSuffix = (100..999).random()
+        return "INV-$datePart-$randomSuffix"
+    }
+
+    private companion object {
+        const val MAX_INVOICE_RETRY = 3
     }
 }

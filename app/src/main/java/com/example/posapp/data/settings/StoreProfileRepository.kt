@@ -43,7 +43,11 @@ data class StoreProfile(
     val outletName: String = "Cabang Utama",
     /** Aktifkan pengiriman ringkasan omzet harian ke Firestore untuk digabung lintas cabang.
      * Nonaktif secara default — fitur ini butuh proyek Firebase sendiri, lihat FIREBASE_SETUP.md. */
-    val cloudSyncEnabled: Boolean = false
+    val cloudSyncEnabled: Boolean = false,
+    /** Nama printer Bluetooth (dari daftar perangkat ter-pairing) yang dipilih untuk cetak
+     * struk. Null = pakai printer ter-pairing pertama yang ditemukan (perilaku lama, dipakai
+     * kalau toko hanya punya satu printer atau belum pernah memilih). Lihat PrinterRepository. */
+    val selectedPrinterName: String? = null
 )
 
 /**
@@ -80,6 +84,7 @@ class StoreProfileRepository @Inject constructor(
         val OUTLET_ID = stringPreferencesKey("outlet_id")
         val OUTLET_NAME = stringPreferencesKey("outlet_name")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
+        val SELECTED_PRINTER_NAME = stringPreferencesKey("selected_printer_name")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -101,7 +106,8 @@ class StoreProfileRepository @Inject constructor(
             autoLockMinutes = prefs[Keys.AUTO_LOCK_MINUTES] ?: 5,
             outletId = prefs[Keys.OUTLET_ID] ?: "",
             outletName = prefs[Keys.OUTLET_NAME] ?: "Cabang Utama",
-            cloudSyncEnabled = prefs[Keys.CLOUD_SYNC_ENABLED] ?: false
+            cloudSyncEnabled = prefs[Keys.CLOUD_SYNC_ENABLED] ?: false,
+            selectedPrinterName = prefs[Keys.SELECTED_PRINTER_NAME]
         )
     }
 
@@ -195,5 +201,13 @@ class StoreProfileRepository @Inject constructor(
 
     suspend fun setCloudSyncEnabled(enabled: Boolean) {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.CLOUD_SYNC_ENABLED] = enabled }
+    }
+
+    /** @param name Nama printer Bluetooth persis seperti tampil di [PrinterRepository.listPairedPrinters],
+     * atau null untuk kembali ke perilaku default (pakai printer ter-pairing pertama). */
+    suspend fun setSelectedPrinterName(name: String?) {
+        context.storeProfileDataStore.edit { prefs ->
+            if (name == null) prefs.remove(Keys.SELECTED_PRINTER_NAME) else prefs[Keys.SELECTED_PRINTER_NAME] = name
+        }
     }
 }
