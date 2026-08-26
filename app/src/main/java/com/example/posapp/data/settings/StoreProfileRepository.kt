@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,7 +35,15 @@ data class StoreProfile(
      * 0 = mati (tidak ada auto-lock idle). Hanya berlaku efektif saat [pinLoginEnabled] aktif —
      * lihat AutoLockManager. Terpisah dari kunci-saat-app-di-background yang SELALU aktif
      * ketika PIN login aktif (tidak bisa dimatikan, karena itu risiko keamanan fisik utama). */
-    val autoLockMinutes: Int = 5
+    val autoLockMinutes: Int = 5,
+    /** ID stabil unik per instalasi (dibuat sekali otomatis), dipakai sebagai kunci dokumen
+     * cabang ini di Firestore saat Sinkronisasi Cloud aktif. Lihat CloudSyncRepository. */
+    val outletId: String = "",
+    /** Nama cabang yang tampil di Ringkasan Semua Cabang (mis. "Cabang Kelapa Gading"). */
+    val outletName: String = "Cabang Utama",
+    /** Aktifkan pengiriman ringkasan omzet harian ke Firestore untuk digabung lintas cabang.
+     * Nonaktif secara default — fitur ini butuh proyek Firebase sendiri, lihat FIREBASE_SETUP.md. */
+    val cloudSyncEnabled: Boolean = false
 )
 
 /**
@@ -68,6 +77,9 @@ class StoreProfileRepository @Inject constructor(
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
         val QUICK_CASH_AMOUNTS = stringPreferencesKey("quick_cash_amounts")
         val AUTO_LOCK_MINUTES = androidx.datastore.preferences.core.intPreferencesKey("auto_lock_minutes")
+        val OUTLET_ID = stringPreferencesKey("outlet_id")
+        val OUTLET_NAME = stringPreferencesKey("outlet_name")
+        val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -86,7 +98,10 @@ class StoreProfileRepository @Inject constructor(
             taxEnabled = prefs[Keys.TAX_ENABLED] ?: true,
             taxPercent = prefs[Keys.TAX_PERCENT] ?: 11.0,
             quickCashAmounts = prefs[Keys.QUICK_CASH_AMOUNTS] ?: "20000,50000,100000,150000,200000",
-            autoLockMinutes = prefs[Keys.AUTO_LOCK_MINUTES] ?: 5
+            autoLockMinutes = prefs[Keys.AUTO_LOCK_MINUTES] ?: 5,
+            outletId = prefs[Keys.OUTLET_ID] ?: "",
+            outletName = prefs[Keys.OUTLET_NAME] ?: "Cabang Utama",
+            cloudSyncEnabled = prefs[Keys.CLOUD_SYNC_ENABLED] ?: false
         )
     }
 
@@ -159,5 +174,26 @@ class StoreProfileRepository @Inject constructor(
     /** @param minutes 0 untuk mematikan auto-lock idle; nilai umum: 1, 5, 15, 30. */
     suspend fun updateAutoLockMinutes(minutes: Int) {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.AUTO_LOCK_MINUTES] = minutes.coerceAtLeast(0) }
+    }
+
+    /**
+     * Pastikan device ini punya outletId stabil (dibuat sekali, dipakai selamanya sebagai kunci
+     * dokumen cabang di Firestore). Aman dipanggil berkali-kali — hanya generate sekali lalu
+     * dipakai ulang dari DataStore setelahnya.
+     */
+    suspend fun ensureOutletId(): String {
+        val current = context.storeProfileDataStore.data.map { it[Keys.OUTLET_ID] }.first()
+        if (!current.isNullOrBlank()) return current
+        val newId = java.util.UUID.randomUUID().toString()
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.OUTLET_ID] = newId }
+        return newId
+    }
+
+    suspend fun updateOutletName(name: String) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.OUTLET_NAME] = name.trim().ifBlank { "Cabang Utama" } }
+    }
+
+    suspend fun setCloudSyncEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.CLOUD_SYNC_ENABLED] = enabled }
     }
 }

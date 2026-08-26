@@ -32,23 +32,16 @@ class CheckoutUseCase @Inject constructor(
         cart: Cart,
         payments: List<PaymentSplit>,
         note: String? = null,
-        cashierName: String? = null
+        cashierName: String? = null,
+        customerId: Long? = null
     ): CheckoutResult {
-        if (cart.isEmpty) return CheckoutResult.Error("Keranjang masih kosong")
+        when (val validation = CheckoutValidator.validate(cart, payments, customerId)) {
+            is CheckoutValidator.ValidationResult.Invalid -> return CheckoutResult.Error(validation.message)
+            CheckoutValidator.ValidationResult.Valid -> Unit
+        }
+
         val validPayments = payments.filter { it.amount > 0 }
-        if (validPayments.isEmpty()) {
-            return CheckoutResult.Error("Masukkan minimal satu metode pembayaran")
-        }
-
-        val totalPaid = validPayments.sumOf { it.amount }
-        if (totalPaid < cart.total) {
-            return CheckoutResult.Error("Total pembayaran belum mencukupi total belanja")
-        }
-
-        cart.lines.firstOrNull { it.quantity > it.availableStock }?.let { line ->
-            return CheckoutResult.Error("Stok ${line.product.name}${line.variant?.let { " (${it.variantLabel})" } ?: ""} tidak mencukupi")
-        }
-
+        val totalPaid = CheckoutValidator.totalPaid(validPayments)
         val invoiceNumber = generateInvoiceNumber()
         val change = (totalPaid - cart.total).coerceAtLeast(0.0)
         val primaryMethod = if (validPayments.size == 1) validPayments.first().method else PaymentMethod.MIXED
@@ -64,7 +57,8 @@ class CheckoutUseCase @Inject constructor(
             amountPaid = totalPaid,
             changeAmount = change,
             note = note,
-            cashierName = cashierName
+            cashierName = cashierName,
+            customerId = customerId
         )
 
         val items = cart.lines.map { line ->

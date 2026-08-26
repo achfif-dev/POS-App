@@ -87,6 +87,17 @@ interface TransactionDao {
     """)
     suspend fun getSalesSummary(start: Long, end: Long): DailySalesSummary
 
+    // Dipakai saat tutup shift: total tunai (CASH) yang seharusnya masuk laci selama shift
+    // berjalan, dihitung dari transaction_payments (bukan transactions.total) supaya transaksi
+    // split payment (MIXED) hanya menyumbang porsi CASH-nya saja, bukan total transaksi penuh.
+    @Query("""
+        SELECT COALESCE(SUM(tp.amount), 0)
+        FROM transaction_payments tp
+        JOIN transactions t ON t.id = tp.transactionId
+        WHERE tp.method = 'CASH' AND t.createdAt BETWEEN :start AND :end
+    """)
+    suspend fun getCashTotalInRange(start: Long, end: Long): Double
+
     @Query("""
         SELECT 
             ti.productId as productId,

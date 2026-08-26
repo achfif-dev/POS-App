@@ -2,6 +2,7 @@ package com.example.posapp.presentation.pos
 
 import android.content.Intent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.posapp.data.local.entity.PaymentMethod
+import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
@@ -281,14 +283,16 @@ fun PosScreen(
     }
 
     if (showPaymentSheet) {
+        val customers by viewModel.customers.collectAsState()
         PaymentModal(
             cart = uiState.cart,
             qrisImagePath = uiState.storeProfile.qrisImagePath,
             qrisRawContent = uiState.storeProfile.qrisRawContent,
             quickCashAmounts = uiState.storeProfile.quickCashAmountList(),
+            customers = customers,
             isProcessing = uiState.isProcessing,
             onDismiss = { showPaymentSheet = false },
-            onConfirm = { payments -> viewModel.checkout(payments) }
+            onConfirm = { payments, customerId -> viewModel.checkout(payments, customerId) }
         )
     }
 
@@ -499,6 +503,7 @@ private fun paymentMethodLabel(method: PaymentMethod): String = when (method) {
     PaymentMethod.CASH -> "Cash"
     PaymentMethod.DEBIT_CREDIT -> "Debit/Kredit"
     PaymentMethod.QRIS -> "QRIS"
+    PaymentMethod.BON -> "Bon"
     PaymentMethod.MIXED -> "Campuran"
 }
 
@@ -514,17 +519,22 @@ private fun PaymentModal(
     qrisImagePath: String?,
     qrisRawContent: String?,
     quickCashAmounts: List<Long> = emptyList(),
+    customers: List<CustomerEntity> = emptyList(),
     isProcessing: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>) -> Unit
+    onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>, customerId: Long?) -> Unit
 ) {
     val payments = remember { mutableStateListOf<com.example.posapp.domain.usecase.PaymentSplit>() }
     var selectedMethod by remember { mutableStateOf(PaymentMethod.CASH) }
     var amountText by remember { mutableStateOf("") }
+    var selectedCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    var showCustomerPicker by remember { mutableStateOf(false) }
 
     val paidSoFar = payments.sumOf { it.amount }
     val remaining = (cart.total - paidSoFar).coerceAtLeast(0.0)
     val isFullyPaid = paidSoFar >= cart.total
+    val hasBonPayment = payments.any { it.method == PaymentMethod.BON }
+    val canConfirm = isFullyPaid && (!hasBonPayment || selectedCustomer != null)
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(16.dp).fillMaxWidth()) {
@@ -562,10 +572,33 @@ private fun PaymentModal(
                 Spacer(Modifier.height(8.dp))
 
                 SingleChoiceSegmented(
-                    options = listOf("Cash" to PaymentMethod.CASH, "Debit/Kredit" to PaymentMethod.DEBIT_CREDIT, "QRIS" to PaymentMethod.QRIS),
+                    options = listOf(
+                        "Cash" to PaymentMethod.CASH,
+                        "Debit/Kredit" to PaymentMethod.DEBIT_CREDIT,
+                        "QRIS" to PaymentMethod.QRIS,
+                        "Bon" to PaymentMethod.BON
+                    ),
                     selected = selectedMethod,
                     onSelect = { selectedMethod = it }
                 )
+
+                if (selectedMethod == PaymentMethod.BON) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedCard(onClick = { showCustomerPicker = true }, modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                selectedCustomer?.name ?: "Pilih pelanggan (wajib untuk Bon)",
+                                modifier = Modifier.weight(1f),
+                                color = if (selectedCustomer == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
 
                 if (selectedMethod == PaymentMethod.QRIS) {
                     Spacer(Modifier.height(16.dp))
@@ -693,17 +726,74 @@ private fun PaymentModal(
             }
 
             Spacer(Modifier.height(16.dp))
+            if (hasBonPayment && selectedCustomer == null) {
+                Text(
+                    "Pilih pelanggan terlebih dahulu untuk menyelesaikan pembayaran Bon",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             Button(
-                onClick = { onConfirm(payments.toList()) },
+                onClick = { onConfirm(payments.toList(), selectedCustomer?.id) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                enabled = !isProcessing && isFullyPaid
+                enabled = !isProcessing && canConfirm
             ) {
                 Text(if (isProcessing) "Memproses..." else "Konfirmasi Pembayaran")
             }
             Spacer(Modifier.height(8.dp))
         }
     }
+
+    if (showCustomerPicker) {
+        CustomerPickerDialog(
+            customers = customers,
+            onDismiss = { showCustomerPicker = false },
+            onSelect = { customer ->
+                selectedCustomer = customer
+                showCustomerPicker = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun CustomerPickerDialog(
+    customers: List<CustomerEntity>,
+    onDismiss: () -> Unit,
+    onSelect: (CustomerEntity) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pilih Pelanggan") },
+        text = {
+            if (customers.isEmpty()) {
+                Text("Belum ada pelanggan. Tambahkan dulu lewat menu Pelanggan di Dashboard.")
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    items(customers, key = { it.id }) { customer ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(customer) }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = null)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(customer.name, fontWeight = FontWeight.SemiBold)
+                                customer.phone?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
+    )
 }
 
 @Composable

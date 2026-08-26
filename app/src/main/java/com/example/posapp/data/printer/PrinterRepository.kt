@@ -139,6 +139,7 @@ class PrinterRepository @Inject constructor(
         PaymentMethod.CASH -> "Cash"
         PaymentMethod.DEBIT_CREDIT -> "Debit/Kredit"
         PaymentMethod.QRIS -> "QRIS"
+        PaymentMethod.BON -> if (language == "en") "Store Credit" else "Bon"
         PaymentMethod.MIXED -> if (language == "en") "Mixed" else "Campuran"
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,7 +40,9 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onOpenStoreProfile: () -> Unit = {},
     onOpenUserManagement: () -> Unit = {},
-    onOpenExpenses: () -> Unit = {}
+    onOpenExpenses: () -> Unit = {},
+    onOpenCloudSync: () -> Unit = {},
+    onOpenMultiOutlet: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val fileShareHelper = remember { FileShareHelper(context) }
@@ -144,6 +147,24 @@ fun SettingsScreen(
                     label = "Beban Usaha",
                     description = "Atur Sewa, Gaji, Listrik, dll untuk hitung Laba Bersih (khusus Admin)",
                     onClick = onOpenExpenses
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SettingsSection(title = "Multi-Cabang") {
+                SettingsNavRow(
+                    icon = Icons.Default.Sync,
+                    label = "Sinkronisasi Cloud",
+                    description = "Kirim ringkasan omzet cabang ini ke cloud (opsional, butuh setup Firebase)",
+                    onClick = onOpenCloudSync
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.Storefront,
+                    label = "Ringkasan Semua Cabang",
+                    description = "Lihat gabungan omzet semua cabang yang sudah sinkron",
+                    onClick = onOpenMultiOutlet
                 )
             }
 

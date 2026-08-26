@@ -6,6 +6,7 @@ import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.data.export.FileShareHelper
 import com.example.posapp.data.export.PdfInvoiceGenerator
 import com.example.posapp.data.local.entity.PaymentMethod
+import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
@@ -15,10 +16,13 @@ import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
 import com.example.posapp.data.repository.CategoryRepository
+import com.example.posapp.data.repository.CustomerRepository
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfile
 import com.example.posapp.data.settings.StoreProfileRepository
+import com.example.posapp.data.sync.CloudSyncRepository
+import com.example.posapp.data.sync.OutletSalesSummary
 import com.example.posapp.domain.model.Cart
 import com.example.posapp.domain.model.CartLine
 import com.example.posapp.domain.usecase.CheckoutResult
@@ -67,7 +71,9 @@ class PosViewModel @Inject constructor(
     private val pdfInvoiceGenerator: PdfInvoiceGenerator,
     private val fileShareHelper: FileShareHelper,
     private val storeProfileRepository: StoreProfileRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val customerRepository: CustomerRepository,
+    private val cloudSyncRepository: CloudSyncRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -114,6 +120,10 @@ class PosViewModel @Inject constructor(
             isAdmin = user == null || user.role == UserRole.ADMIN
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PosUiState())
+
+    /** Daftar pelanggan aktif, dipakai untuk memilih pelanggan saat metode Bon/Piutang dipakai. */
+    val customers: StateFlow<List<CustomerEntity>> = customerRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         // Selaraskan pajak keranjang dengan pengaturan toko (Pengaturan > Profil Toko > Pajak)
@@ -264,15 +274,16 @@ class PosViewModel @Inject constructor(
         _cart.value = Cart()
     }
 
-    fun checkout(payments: List<PaymentSplit>) {
+    fun checkout(payments: List<PaymentSplit>, customerId: Long? = null) {
         viewModelScope.launch {
             _isProcessing.value = true
             val cashierName = sessionManager.currentUser.value?.name
-            when (val result = checkoutUseCase(_cart.value, payments, cashierName = cashierName)) {
+            when (val result = checkoutUseCase(_cart.value, payments, cashierName = cashierName, customerId = customerId)) {
                 is CheckoutResult.Success -> {
                     _lastReceipt.value = transactionRepository.getTransactionWithItems(result.transactionId)
                     _events.emit(PosEvent.CheckoutSuccess(result.transactionId, result.invoiceNumber, result.change))
                     clearCart()
+                    syncTodaySummaryIfEnabled()
                 }
                 is CheckoutResult.Error -> {
                     _events.emit(PosEvent.ShowMessage(result.message))
@@ -283,6 +294,38 @@ class PosViewModel @Inject constructor(
     }
 
     fun logout() = sessionManager.logout()
+
+    /**
+     * Kirim ulang ringkasan omzet HARI INI ke Firestore setelah checkout — best-effort, tidak
+     * pernah memblokir/menggagalkan alur kasir kalau cloud sync nonaktif, belum dikonfigurasi,
+     * atau device sedang offline (lihat CloudSyncRepository, semua fail-soft).
+     */
+    private fun syncTodaySummaryIfEnabled() {
+        viewModelScope.launch {
+            val profile = storeProfileRepository.profile.first()
+            if (!profile.cloudSyncEnabled) return@launch
+            val outletId = storeProfileRepository.ensureOutletId()
+
+            val cal = java.util.Calendar.getInstance()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+            val dayStart = cal.timeInMillis
+            val dayEnd = dayStart + 24L * 60 * 60 * 1000 - 1
+            val dateKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(dayStart))
+
+            val summary = transactionRepository.getSalesSummary(dayStart, dayEnd)
+            cloudSyncRepository.pushDailySummary(
+                OutletSalesSummary(
+                    outletId = outletId,
+                    outletName = profile.outletName,
+                    dateKey = dateKey,
+                    totalRevenue = summary.totalRevenue,
+                    totalTransactions = summary.totalTransactions,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
 }
 
 sealed class PosEvent {

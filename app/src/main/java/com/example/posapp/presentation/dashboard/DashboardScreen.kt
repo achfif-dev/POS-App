@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Settings
@@ -45,7 +47,9 @@ fun DashboardScreen(
     onOpenProducts: () -> Unit = {},
     onOpenStock: () -> Unit = {},
     onOpenReports: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenShift: () -> Unit = {},
+    onOpenCustomers: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -182,9 +186,18 @@ fun DashboardScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     QuickMenuButton(Modifier.weight(1f), Icons.Default.Inventory2, "Produk", onOpenProducts)
                     QuickMenuButton(Modifier.weight(1f), Icons.AutoMirrored.Filled.TrendingUp, "Laporan", onOpenReports)
+                    QuickMenuButton(Modifier.weight(1f), Icons.Default.LockClock, "Shift", onOpenShift)
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    QuickMenuButton(Modifier.weight(1f), Icons.Default.Person, "Pelanggan", onOpenCustomers)
                     if (uiState.isAdmin) {
                         QuickMenuButton(Modifier.weight(1f), Icons.Default.Settings, "Pengaturan", onOpenSettings)
+                    } else {
+                        Spacer(Modifier.weight(1f))
                     }
+                    Spacer(Modifier.weight(1f))
                 }
             }
             item { Spacer(Modifier.height(72.dp)) } // ruang untuk FAB

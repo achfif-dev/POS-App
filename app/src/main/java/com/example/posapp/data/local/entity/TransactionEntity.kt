@@ -5,9 +5,20 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS, MIXED } // MIXED = split payment (>1 metode dalam satu transaksi)
+enum class PaymentMethod { CASH, DEBIT_CREDIT, QRIS, BON, MIXED } // MIXED = split payment (>1 metode dalam satu transaksi); BON = piutang, wajib terhubung ke CustomerEntity
 
-@Entity(tableName = "transactions")
+@Entity(
+    tableName = "transactions",
+    foreignKeys = [
+        ForeignKey(
+            entity = CustomerEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["customerId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("customerId")]
+)
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val invoiceNumber: String,      // mis. INV-20260822-0001
@@ -21,6 +32,7 @@ data class TransactionEntity(
     val changeAmount: Double,
     val note: String? = null,
     val cashierName: String? = null, // snapshot nama kasir yang login saat transaksi (fitur multi-user)
+    val customerId: Long? = null,    // diisi bila transaksi ini terhubung ke pelanggan (wajib untuk BON)
     val createdAt: Long = System.currentTimeMillis(),
     val editedByName: String? = null, // nama Admin terakhir yang mengoreksi transaksi ini (audit trail)
     val editedAt: Long? = null

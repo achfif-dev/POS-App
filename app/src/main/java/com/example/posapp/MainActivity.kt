@@ -15,15 +15,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.posapp.data.auth.AutoLockManager
 import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.domain.auth.Permission
 import com.example.posapp.presentation.auth.AuthGateViewModel
 import com.example.posapp.presentation.auth.LoginScreen
+import com.example.posapp.presentation.customer.CustomerDetailScreen
+import com.example.posapp.presentation.customer.CustomerScreen
 import com.example.posapp.presentation.dashboard.DashboardScreen
 import com.example.posapp.presentation.expense.ExpenseScreen
 import com.example.posapp.presentation.pos.PosScreen
@@ -34,7 +38,12 @@ import com.example.posapp.presentation.settings.SettingsScreen
 import com.example.posapp.presentation.settings.StoreProfileScreen
 import com.example.posapp.presentation.settings.StoreProfileViewModel
 import com.example.posapp.presentation.settings.UserManagementScreen
+import com.example.posapp.presentation.shift.ShiftRequiredPrompt
+import com.example.posapp.presentation.shift.ShiftScreen
+import com.example.posapp.presentation.shift.ShiftViewModel
 import com.example.posapp.presentation.stock.StockScreen
+import com.example.posapp.presentation.sync.CloudSyncScreen
+import com.example.posapp.presentation.sync.MultiOutletDashboardScreen
 import com.example.posapp.presentation.theme.PosAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -144,29 +153,59 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                 onOpenProducts = { navController.navigate("products") },
                 onOpenStock = { navController.navigate("stock") },
                 onOpenReports = { navController.navigate("reports") },
-                onOpenSettings = { navController.navigate("settings") }
+                onOpenSettings = { navController.navigate("settings") },
+                onOpenShift = { navController.navigate("shift") },
+                onOpenCustomers = { navController.navigate("customers") }
             )
         }
         composable("pos") { backStackEntry ->
             val scannedSku = backStackEntry.savedStateHandle
                 .getStateFlow<String?>("scanned_sku", null)
                 .collectAsState()
-            PosScreen(
-                onOpenProducts = { navController.navigate("products") },
-                onOpenScanner = { navController.navigate("scanner") },
-                onOpenReports = { navController.navigate("reports") },
-                onOpenStock = { navController.navigate("stock") },
-                onOpenSettings = { navController.navigate("settings") },
-                onOpenDashboard = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                onLogout = {
-                    sessionManager.logout()
-                    navController.navigate("login") {
-                        popUpTo("pos") { inclusive = true }
-                    }
-                },
-                scannedSku = scannedSku.value,
-                onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null }
+            // Gerbang shift: kalau "Wajibkan Login PIN" aktif (mode multi-kasir), transaksi tidak
+            // boleh berjalan tanpa shift terbuka -- supaya kas tunai selalu bisa direkonsiliasi ke
+            // shift & kasir yang jelas. Mode single-user (PIN nonaktif) tidak digerbang: toko kecil
+            // yang tidak butuh disiplin shift tidak dipaksa memakainya.
+            val shiftGateViewModel: ShiftViewModel = hiltViewModel()
+            val activeShift by shiftGateViewModel.activeShift.collectAsState()
+            if (storeProfile.pinLoginEnabled && activeShift == null) {
+                ShiftRequiredPrompt(onOpenShift = { navController.navigate("shift") })
+            } else {
+                PosScreen(
+                    onOpenProducts = { navController.navigate("products") },
+                    onOpenScanner = { navController.navigate("scanner") },
+                    onOpenReports = { navController.navigate("reports") },
+                    onOpenStock = { navController.navigate("stock") },
+                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenDashboard = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
+                    onLogout = {
+                        sessionManager.logout()
+                        navController.navigate("login") {
+                            popUpTo("pos") { inclusive = true }
+                        }
+                    },
+                    scannedSku = scannedSku.value,
+                    onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null }
+                )
+            }
+        }
+        composable("shift") {
+            ShiftScreen(
+                onBack = { navController.popBackStack() },
+                onShiftOpened = { }
             )
+        }
+        composable("customers") {
+            CustomerScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { customerId -> navController.navigate("customer_detail/$customerId") }
+            )
+        }
+        composable(
+            route = "customer_detail/{customerId}",
+            arguments = listOf(navArgument("customerId") { type = NavType.LongType })
+        ) {
+            CustomerDetailScreen(onBack = { navController.popBackStack() })
         }
         composable("products") { ProductScreen(onBack = { navController.popBackStack() }) }
         composable("scanner") {
@@ -203,7 +242,9 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                     onBack = { navController.popBackStack() },
                     onOpenStoreProfile = { navController.navigate("store_profile") },
                     onOpenUserManagement = { navController.navigate("user_management") },
-                    onOpenExpenses = { navController.navigate("expenses") }
+                    onOpenExpenses = { navController.navigate("expenses") },
+                    onOpenCloudSync = { navController.navigate("cloud_sync") },
+                    onOpenMultiOutlet = { navController.navigate("multi_outlet") }
                 )
             }
         }
@@ -226,6 +267,23 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
                 UserManagementScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("cloud_sync") {
+            // Sinkronisasi Cloud (Fase 4) mengubah pengaturan tingkat toko/cabang -> admin-only,
+            // sama seperti rute Pengaturan lain.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                CloudSyncScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("multi_outlet") {
+            // Ringkasan lintas cabang ini data tingkat pemilik -> admin-only.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
             }
         }
     }

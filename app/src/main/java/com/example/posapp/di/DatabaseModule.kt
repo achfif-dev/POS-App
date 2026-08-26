@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import com.example.posapp.data.local.AppDatabase
 import com.example.posapp.data.local.dao.CategoryDao
+import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
+import com.example.posapp.data.local.dao.ShiftDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.dao.UserDao
@@ -51,4 +53,10 @@ object DatabaseModule {
 
     @Provides
     fun provideExpenseDao(db: AppDatabase): ExpenseDao = db.expenseDao()
+
+    @Provides
+    fun provideShiftDao(db: AppDatabase): ShiftDao = db.shiftDao()
+
+    @Provides
+    fun provideCustomerDao(db: AppDatabase): CustomerDao = db.customerDao()
 }

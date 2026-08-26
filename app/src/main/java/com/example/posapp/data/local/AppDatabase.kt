@@ -5,18 +5,24 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.example.posapp.data.local.dao.CategoryDao
+import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
+import com.example.posapp.data.local.dao.ShiftDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.dao.UserDao
 import com.example.posapp.data.local.entity.CategoryEntity
+import com.example.posapp.data.local.entity.CustomerEntity
+import com.example.posapp.data.local.entity.DebtPaymentEntity
 import com.example.posapp.data.local.entity.ExpenseEntity
 import com.example.posapp.data.local.entity.ExpensePeriod
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
+import com.example.posapp.data.local.entity.ShiftEntity
+import com.example.posapp.data.local.entity.ShiftStatus
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
@@ -42,6 +48,12 @@ class Converters {
 
     @TypeConverter
     fun toExpensePeriod(value: String): ExpensePeriod = ExpensePeriod.valueOf(value)
+
+    @TypeConverter
+    fun fromShiftStatus(value: ShiftStatus): String = value.name
+
+    @TypeConverter
+    fun toShiftStatus(value: String): ShiftStatus = ShiftStatus.valueOf(value)
 }
 
 @Database(
@@ -54,9 +66,12 @@ class Converters {
         ProductVariantEntity::class,
         UserEntity::class,
         TransactionPaymentEntity::class,
-        ExpenseEntity::class
+        ExpenseEntity::class,
+        ShiftEntity::class,
+        CustomerEntity::class,
+        DebtPaymentEntity::class
     ],
-    version = 7, // v7: tambah tabel `expenses` (Beban Usaha) untuk fitur Laba Bersih di Laporan
+    version = 9, // v9: tambah tabel `customers`/`debt_payments` + kolom transactions.customerId (piutang/Bon)
     exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
 )
 @TypeConverters(Converters::class)
@@ -68,6 +83,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productVariantDao(): ProductVariantDao
     abstract fun userDao(): UserDao
     abstract fun expenseDao(): ExpenseDao
+    abstract fun shiftDao(): ShiftDao
+    abstract fun customerDao(): CustomerDao
 
     companion object {
         const val DATABASE_NAME = "pos_database"
