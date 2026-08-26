@@ -143,10 +143,14 @@ dependencies {
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // CameraX + ML Kit Barcode Scanning
-    implementation("androidx.camera:camera-core:1.3.4")
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
+    // NOTE: versi HARUS >= 1.4.0 karena BarcodeScannerScreen.kt memakai
+    // ProcessCameraProvider.awaitInstance() (Kotlin suspend fun), yang baru
+    // ditambahkan di CameraX 1.4.0-alpha (unresolved reference di 1.3.x -
+    // ini penyebab build gagal di compileDebugKotlin).
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     // Bluetooth ESC/POS Thermal Printer
