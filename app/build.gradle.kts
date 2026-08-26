@@ -98,6 +98,19 @@ android {
     }
 }
 
+// FIX: Firebase Firestore/Auth (Fase 4 - Sinkronisasi Cloud) menyeret com.google.guava:guava
+// (Guava penuh) sebagai dependency transitif, yang berkonflik dengan
+// com.google.guava:listenablefuture (stub kosong) yang dipakai CameraX (camera-core) untuk
+// ProcessCameraProvider.getInstance().addListener(...) di BarcodeScannerScreen.kt. Tanpa paksaan
+// versi ini, Gradle bisa salah resolve dan gagal compile dengan "Cannot access class
+// ListenableFuture". Guava versi -android sudah membawa ListenableFuture asli, jadi kedua
+// dependency (CameraX & Firebase) sama-sama terpenuhi oleh satu versi yang sama.
+configurations.all {
+    resolutionStrategy {
+        force("com.google.guava:guava:32.1.3-android")
+    }
+}
+
 dependencies {
     // Core / Compose
     implementation("androidx.core:core-ktx:1.13.1")
