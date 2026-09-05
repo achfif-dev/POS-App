@@ -3,6 +3,14 @@
 Semua perubahan penting pada proyek ini dicatat di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versioning mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unrilis]
+### Diubah
+- `exportSchema` Room diaktifkan (`true`) + `room.schemaLocation` dikonfigurasi ke `app/schemas/`.
+  Mulai sekarang setiap kenaikan versi database menyimpan snapshot skema JSON asli, sehingga
+  migrasi berikutnya (v10 -> v11, dst.) bisa diuji otomatis terhadap skema versi sebelumnya yang
+  sungguhan (bukan cuma dugaan) memakai `MigrationTestHelper`. Folder `app/schemas/` WAJIB
+  ikut di-commit ke Git — jangan masukkan ke `.gitignore`.
+
 ## [1.2.0] - 2026-08-26
 ### Ditambahkan
 - **Manajemen Shift Kasir**: buka/tutup kasir dengan rekonsiliasi kas otomatis (kas seharusnya

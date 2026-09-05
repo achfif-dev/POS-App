@@ -67,10 +67,14 @@ tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung
   `./gradlew`) supaya repo tetap ringan tanpa commit `gradle-wrapper.jar` biner.
 - `proguard-rules.pro` sudah menyertakan `-dontwarn` untuk dependency opsional Apache POI
   (OSGi, Batik/SVG) yang tidak dipakai di path Android manapun di app ini.
-- Skema Room di-set `exportSchema = false` dan `fallbackToDestructiveMigration()` untuk
-  mempercepat development awal (versi database saat ini: 2, ditambah tabel `product_variants`
-  & `users`). Sebelum rilis ke pengguna nyata, aktifkan `exportSchema = true` + tulis
-  `Migration` resmi supaya data pengguna tidak hilang saat update versi app.
+- **Migrasi database resmi**: sejak v10, database TIDAK LAGI pakai `fallbackToDestructiveMigration()`
+  untuk upgrade (versi lama sempat memakainya saat masih tahap awal — itu MENGHAPUS seluruh data
+  toko setiap skema berubah). Sekarang setiap kenaikan versi WAJIB punya `Migration` eksplisit di
+  `Migrations.kt`, didaftarkan di `DatabaseModule.kt`. `fallbackToDestructiveMigrationOnDowngrade()`
+  tetap dipakai tapi HANYA untuk skenario downgrade (pasang ulang APK versi lebih lama secara
+  tidak sengaja) — aman karena versi skema baru memang tidak mungkin dibaca kode lama.
+  `exportSchema = true` mulai v10 (lihat `app/schemas/`) — folder ini WAJIB ikut di-commit ke
+  Git, jadi jangan ditambahkan ke `.gitignore`.
 - PIN pengguna disimpan sebagai hash SHA-256 (`UserRepository`), bukan plaintext. Sesi login
   bersifat in-memory (`SessionManager`) sehingga aplikasi akan meminta PIN lagi setiap kali
   dibuka ulang selama fitur "Login PIN" aktif di Pengaturan > Pengguna & Login PIN.
