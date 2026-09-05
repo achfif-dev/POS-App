@@ -96,6 +96,21 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // Room exportSchema=true (lihat AppDatabase.kt) menulis snapshot skema JSON ke sini setiap
+    // build. WAJIB commit folder app/schemas/ ke Git — ini "sumber kebenaran" struktur database
+    // per versi, dipakai untuk menguji migrasi Room secara otomatis (MigrationTestHelper) dan
+    // untuk siapa pun mengecek riwayat perubahan skema tanpa harus baca ulang seluruh entity.
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDirs(files("$projectDir/schemas"))
+        }
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
 }
 
 // FIX: Firebase Firestore/Auth (Fase 4 - Sinkronisasi Cloud) menyeret com.google.guava:guava
