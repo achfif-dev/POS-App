@@ -35,7 +35,17 @@ data class TransactionEntity(
     val customerId: Long? = null,    // diisi bila transaksi ini terhubung ke pelanggan (wajib untuk BON)
     val createdAt: Long = System.currentTimeMillis(),
     val editedByName: String? = null, // nama Admin terakhir yang mengoreksi transaksi ini (audit trail)
-    val editedAt: Long? = null
+    val editedAt: Long? = null,
+    // "COMPLETED" (normal) atau "VOIDED" (dibatalkan penuh — lihat TransactionRepository.voidTransaction).
+    // Transaksi VOIDED tetap tersimpan apa adanya untuk audit, tapi dikeluarkan dari semua
+    // perhitungan Laporan (omzet, laba, kas shift, produk terlaris).
+    val status: String = "COMPLETED",
+    // Akumulasi nominal yang sudah diretur/refund ke pelanggan (lihat TransactionReturnEntity).
+    // Penjualan bersih di Laporan = total - returnedAmount. TIDAK termasuk refund akibat VOID
+    // (void tidak dianggap penjualan sama sekali, bukan pengurangan dari penjualan yang terjadi).
+    val returnedAmount: Double = 0.0,
+    val voidedByName: String? = null,
+    val voidedAt: Long? = null
 )
 
 @Entity(

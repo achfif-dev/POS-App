@@ -7,9 +7,12 @@ import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.TopSellingItem
 import com.example.posapp.data.local.dao.TransactionDao
+import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
+import com.example.posapp.data.local.entity.TransactionReturnEntity
+import com.example.posapp.data.local.entity.TransactionReturnItemEntity
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,6 +21,24 @@ import javax.inject.Singleton
  * dieksekusi (bukan cuma snapshot keranjang di UI) — misalnya kasir lain sudah menjual item
  * yang sama beberapa detik sebelumnya. Membatalkan seluruh transaksi (lihat withTransaction). */
 class InsufficientStockException(message: String) : Exception(message)
+
+/** Dilempar saat permintaan retur tidak valid (mis. qty retur melebihi qty yang dibeli, atau
+ * transaksi yang mau diretur/void ternyata sudah VOIDED sebelumnya). */
+class ReturnValidationException(message: String) : Exception(message)
+
+/** Satu baris permintaan retur: item transaksi mana, berapa qty, dan apakah barangnya masih
+ * layak dikembalikan ke stok (restocked) atau rusak/dibuang (restocked = false). */
+data class ReturnItemRequest(
+    val transactionItemId: Long,
+    val quantity: Int,
+    val restocked: Boolean
+)
+
+/** Detail lengkap satu baris retur/void untuk ditampilkan di riwayat retur suatu transaksi. */
+data class ReturnWithItems(
+    val header: TransactionReturnEntity,
+    val items: List<TransactionReturnItemEntity>
+)
 
 @Singleton
 class TransactionRepository @Inject constructor(
@@ -31,8 +52,13 @@ class TransactionRepository @Inject constructor(
     fun observeRange(start: Long, end: Long): Flow<List<TransactionEntity>> =
         transactionDao.observeRange(start, end)
 
-    suspend fun getSalesSummary(start: Long, end: Long): DailySalesSummary =
-        transactionDao.getSalesSummary(start, end)
+    /** Laba kotor sudah dikurangi nilai laba dari item yang diretur pada rentang yang sama —
+     * lihat komentar TransactionDao.getReturnedGrossProfitInRange untuk alasannya. */
+    suspend fun getSalesSummary(start: Long, end: Long): DailySalesSummary {
+        val summary = transactionDao.getSalesSummary(start, end)
+        val returnedProfit = transactionDao.getReturnedGrossProfitInRange(start, end)
+        return summary.copy(totalGrossProfit = summary.totalGrossProfit - returnedProfit)
+    }
 
     suspend fun getTopSellingItems(start: Long, end: Long, limit: Int = 10): List<TopSellingItem> =
         transactionDao.getTopSellingItems(start, end, limit)
@@ -149,4 +175,124 @@ class TransactionRepository @Inject constructor(
         }
         transactionDao.deleteTransaction(transactionId)
     }
+
+    /**
+     * Membatalkan SATU transaksi sepenuhnya (Admin-only, dicek di layer ViewModel lewat
+     * Permission). Beda dari [deleteTransaction] lama: transaksi TIDAK dihapus dari database,
+     * hanya ditandai status="VOIDED" — sehingga tetap ada jejak audit lengkap (kapan, siapa,
+     * kenapa) tapi dikeluarkan dari semua perhitungan Laporan. Stok seluruh item dikembalikan
+     * penuh (asumsi: void dipakai untuk transaksi salah pencet, barang belum betulan berpindah).
+     *
+     * @throws ReturnValidationException bila transaksi sudah pernah di-void sebelumnya.
+     */
+    suspend fun voidTransaction(
+        transactionId: Long,
+        reason: String,
+        voidedByName: String
+    ): Unit = appDatabase.withTransaction {
+        val transaction = transactionDao.getById(transactionId)
+            ?: throw ReturnValidationException("Transaksi tidak ditemukan")
+        if (transaction.status == "VOIDED") {
+            throw ReturnValidationException("Transaksi ini sudah dibatalkan sebelumnya")
+        }
+        val items = transactionDao.getItems(transactionId)
+        items.forEach { item ->
+            if (item.variantId != null) {
+                productVariantDao.increaseStock(item.variantId, item.quantity)
+            } else {
+                productDao.increaseStock(item.productId, item.quantity)
+            }
+        }
+        transactionDao.insertReturn(
+            TransactionReturnEntity(
+                transactionId = transactionId,
+                isVoid = true,
+                reason = reason,
+                // Kalau sebelumnya sudah ada retur sebagian (returnedAmount > 0), void cuma
+                // membatalkan SISA yang belum diretur — bukan seluruh total transaksi lagi.
+                refundAmount = transaction.total - transaction.returnedAmount,
+                refundMethod = null,
+                processedByName = voidedByName
+            )
+        )
+        transactionDao.markVoided(transactionId, voidedByName, System.currentTimeMillis())
+    }
+
+    /**
+     * Memproses retur barang (sebagian atau seluruh item) untuk transaksi yang sudah selesai —
+     * dipakai saat pelanggan mengembalikan barang setelah dibawa pulang. Transaksi asal TIDAK
+     * diubah nilainya; retur dicatat sebagai baris terpisah (bisa berkali-kali/bertahap untuk
+     * transaksi yang sama) dan akumulasi nominalnya ditambahkan ke `returnedAmount` transaksi.
+     *
+     * @param items daftar item beserta qty yang diretur & apakah barangnya layak masuk stok lagi.
+     * @throws ReturnValidationException bila transaksi sudah VOIDED, item tidak ditemukan, atau
+     * qty retur (dijumlah dengan retur sebelumnya untuk item yang sama) melebihi qty yang dibeli.
+     */
+    suspend fun processReturn(
+        transactionId: Long,
+        items: List<ReturnItemRequest>,
+        reason: String,
+        refundAmount: Double,
+        refundMethod: PaymentMethod?,
+        processedByName: String
+    ): Unit = appDatabase.withTransaction {
+        val transaction = transactionDao.getById(transactionId)
+            ?: throw ReturnValidationException("Transaksi tidak ditemukan")
+        if (transaction.status == "VOIDED") {
+            throw ReturnValidationException("Transaksi ini sudah dibatalkan (void), tidak bisa diretur")
+        }
+        if (items.isEmpty()) {
+            throw ReturnValidationException("Pilih minimal 1 item yang diretur")
+        }
+        val originalItems = transactionDao.getItems(transactionId).associateBy { it.id }
+
+        val returnId = transactionDao.insertReturn(
+            TransactionReturnEntity(
+                transactionId = transactionId,
+                isVoid = false,
+                reason = reason,
+                refundAmount = refundAmount,
+                refundMethod = refundMethod?.name,
+                processedByName = processedByName
+            )
+        )
+
+        val returnItemRows = items.map { request ->
+            val original = originalItems[request.transactionItemId]
+                ?: throw ReturnValidationException("Item transaksi tidak ditemukan")
+            if (request.quantity <= 0) {
+                throw ReturnValidationException("Qty retur ${original.productNameSnapshot} harus lebih dari 0")
+            }
+            val alreadyReturned = transactionDao.getReturnedQuantityForItem(request.transactionItemId)
+            if (alreadyReturned + request.quantity > original.quantity) {
+                throw ReturnValidationException(
+                    "Qty retur ${original.productNameSnapshot} melebihi qty yang dibeli " +
+                        "(sudah diretur $alreadyReturned dari ${original.quantity})"
+                )
+            }
+            if (request.restocked) {
+                if (original.variantId != null) {
+                    productVariantDao.increaseStock(original.variantId, request.quantity)
+                } else {
+                    productDao.increaseStock(original.productId, request.quantity)
+                }
+            }
+            TransactionReturnItemEntity(
+                returnId = returnId,
+                transactionItemId = request.transactionItemId,
+                productId = original.productId,
+                variantId = original.variantId,
+                quantityReturned = request.quantity,
+                restocked = request.restocked
+            )
+        }
+        transactionDao.insertReturnItems(returnItemRows)
+        transactionDao.addReturnedAmount(transactionId, refundAmount)
+    }
+
+    /** Riwayat retur/void untuk satu transaksi (ditampilkan di dialog detail Riwayat Penjualan). */
+    suspend fun getReturnHistory(transactionId: Long): List<ReturnWithItems> =
+        transactionDao.getReturnsForTransaction(transactionId).map { header ->
+            ReturnWithItems(header, transactionDao.getReturnItems(header.id))
+        }
 }

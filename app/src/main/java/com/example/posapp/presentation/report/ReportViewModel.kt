@@ -7,12 +7,16 @@ import com.example.posapp.data.export.FileShareHelper
 import com.example.posapp.data.export.PdfInvoiceGenerator
 import com.example.posapp.data.local.dao.DailySalesSummary
 import com.example.posapp.data.local.dao.TopSellingItem
+import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
 import com.example.posapp.data.repository.ExpenseRepository
+import com.example.posapp.data.repository.ReturnItemRequest
+import com.example.posapp.data.repository.ReturnValidationException
+import com.example.posapp.data.repository.ReturnWithItems
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +52,7 @@ data class ReportUiState(
 data class TransactionDetailUiState(
     val transaction: TransactionEntity,
     val items: List<TransactionItemEntity>,
+    val returnHistory: List<ReturnWithItems> = emptyList(), // riwayat retur/void transaksi ini
     val isSaving: Boolean = false
 )
 
@@ -149,7 +154,8 @@ class ReportViewModel @Inject constructor(
                 return@launch
             }
             val (transaction, items) = result
-            _detailState.value = TransactionDetailUiState(transaction, items)
+            val returnHistory = transactionRepository.getReturnHistory(transactionId)
+            _detailState.value = TransactionDetailUiState(transaction, items, returnHistory)
         }
     }
 
@@ -189,17 +195,59 @@ class ReportViewModel @Inject constructor(
     }
 
     /**
-     * Menghapus SATU transaksi sepenuhnya (koreksi Admin bila kasir salah checkout transaksi,
-     * bukan sekadar salah 1 item). Stok dikembalikan otomatis. Tidak bisa dibatalkan setelah
-     * dipanggil — konfirmasi dilakukan di layer UI sebelum fungsi ini dipanggil.
+     * Membatalkan (VOID) SATU transaksi sepenuhnya — pengganti fungsi hapus permanen yang lama.
+     * Beda dari hapus permanen: transaksi tetap tersimpan (statusnya jadi VOIDED) supaya ada
+     * jejak audit, hanya dikeluarkan dari perhitungan Laporan. Stok dikembalikan otomatis.
+     * Hanya boleh dipanggil untuk Admin — dicek di layer UI (tombol cuma tampil utk Admin,
+     * sama seperti tombol "Hapus Transaksi" yang lama).
      */
-    fun deleteTransaction(transactionId: Long) {
+    fun voidTransaction(transactionId: Long, reason: String) {
         viewModelScope.launch {
             _detailState.value = _detailState.value?.copy(isSaving = true)
-            transactionRepository.deleteTransaction(transactionId)
-            _detailState.value = null
-            _events.emit(ReportEvent.ShowMessage("Transaksi berhasil dihapus"))
-            load()
+            val byName = sessionManager.currentUser.value?.name ?: "Admin"
+            try {
+                transactionRepository.voidTransaction(transactionId, reason, byName)
+                _detailState.value = null
+                _events.emit(ReportEvent.ShowMessage("Transaksi berhasil dibatalkan (void)"))
+                load()
+            } catch (e: ReturnValidationException) {
+                _detailState.value = _detailState.value?.copy(isSaving = false)
+                _events.emit(ReportEvent.ShowMessage(e.message ?: "Gagal membatalkan transaksi"))
+            }
+        }
+    }
+
+    /**
+     * Memproses retur barang (sebagian atau seluruh item) untuk transaksi yang sedang dibuka di
+     * detail Riwayat Penjualan. Tersedia untuk Kasir maupun Admin (lihat Permission.canProcessReturn)
+     * — alasan retur wajib diisi di layer UI sebelum fungsi ini dipanggil.
+     */
+    fun processReturn(
+        items: List<ReturnItemRequest>,
+        reason: String,
+        refundAmount: Double,
+        refundMethod: PaymentMethod?
+    ) {
+        val transactionId = _detailState.value?.transaction?.id ?: return
+        viewModelScope.launch {
+            _detailState.value = _detailState.value?.copy(isSaving = true)
+            val processedByName = sessionManager.currentUser.value?.name ?: "Kasir"
+            try {
+                transactionRepository.processReturn(
+                    transactionId = transactionId,
+                    items = items,
+                    reason = reason,
+                    refundAmount = refundAmount,
+                    refundMethod = refundMethod,
+                    processedByName = processedByName
+                )
+                _detailState.value = null
+                _events.emit(ReportEvent.ShowMessage("Retur berhasil diproses"))
+                load()
+            } catch (e: ReturnValidationException) {
+                _detailState.value = _detailState.value?.copy(isSaving = false)
+                _events.emit(ReportEvent.ShowMessage(e.message ?: "Gagal memproses retur"))
+            }
         }
     }
 

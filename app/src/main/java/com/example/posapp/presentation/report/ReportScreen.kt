@@ -24,8 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
+import com.example.posapp.data.repository.ReturnItemRequest
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -44,7 +46,8 @@ fun ReportScreen(
     val uiState by viewModel.uiState.collectAsState()
     val detailState by viewModel.detailState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showVoidConfirm by remember { mutableStateOf(false) }
+    var showReturnDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -243,6 +246,19 @@ fun ReportScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (tx.status == "VOIDED") {
+                                Text(
+                                    "Dibatalkan (Void)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            } else if (tx.returnedAmount > 0.0) {
+                                Text(
+                                    "Diretur sebagian: ${rupiah.format(tx.returnedAmount)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
                         }
                         Text(rupiah.format(tx.total), fontWeight = FontWeight.Medium)
                     }
@@ -260,36 +276,40 @@ fun ReportScreen(
             onSave = { updatedTransaction, updatedItems, deletedItemIds ->
                 viewModel.saveTransactionCorrection(updatedTransaction, updatedItems, deletedItemIds)
             },
-            onDeleteRequest = { showDeleteConfirm = true },
+            onVoidRequest = { showVoidConfirm = true },
+            onReturnRequest = { showReturnDialog = true },
             onPrint = { requestPrint() },
             onExportPdf = { viewModel.exportTransactionPdf() }
         )
     }
 
-    if (showDeleteConfirm) {
+    if (showVoidConfirm) {
         val detail = detailState
         if (detail == null) {
-            showDeleteConfirm = false
+            showVoidConfirm = false
         } else {
-            AlertDialog(
-                onDismissRequest = { showDeleteConfirm = false },
-                title = { Text("Hapus Transaksi?") },
-                text = {
-                    Text(
-                        "Transaksi ${detail.transaction.invoiceNumber} akan dihapus permanen dan " +
-                            "stok produknya dikembalikan. Tindakan ini tidak bisa dibatalkan."
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showDeleteConfirm = false
-                        viewModel.deleteTransaction(detail.transaction.id)
-                    }) {
-                        Text("Hapus", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Batal") }
+            VoidConfirmDialog(
+                invoiceNumber = detail.transaction.invoiceNumber,
+                onDismiss = { showVoidConfirm = false },
+                onConfirm = { reason ->
+                    showVoidConfirm = false
+                    viewModel.voidTransaction(detail.transaction.id, reason)
+                }
+            )
+        }
+    }
+
+    if (showReturnDialog) {
+        val detail = detailState
+        if (detail == null) {
+            showReturnDialog = false
+        } else {
+            ReturnDialog(
+                detail = detail,
+                onDismiss = { showReturnDialog = false },
+                onConfirm = { items, reason, refundAmount, refundMethod ->
+                    showReturnDialog = false
+                    viewModel.processReturn(items, reason, refundAmount, refundMethod)
                 }
             )
         }
@@ -299,6 +319,52 @@ fun ReportScreen(
 @Composable
 private fun PresetChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+/**
+ * Dialog konfirmasi Void (batalkan transaksi sepenuhnya). Beda dari dialog hapus permanen yang
+ * lama: alasan WAJIB diisi (disimpan di transaction_returns untuk audit — lihat
+ * TransactionRepository.voidTransaction), tombol konfirmasi baru aktif setelah alasan diisi.
+ */
+@Composable
+private fun VoidConfirmDialog(
+    invoiceNumber: String,
+    onDismiss: () -> Unit,
+    onConfirm: (reason: String) -> Unit
+) {
+    var reason by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Batalkan Transaksi (Void)?") },
+        text = {
+            Column {
+                Text(
+                    "Transaksi $invoiceNumber akan ditandai DIBATALKAN dan stok produknya " +
+                        "dikembalikan penuh. Transaksi tetap tersimpan untuk audit, hanya tidak " +
+                        "dihitung lagi di Laporan. Tindakan ini tidak bisa dibatalkan."
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("Alasan pembatalan (wajib)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(reason.trim()) },
+                enabled = reason.isNotBlank()
+            ) {
+                Text("Batalkan Transaksi", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Tutup") }
+        }
+    )
 }
 
 /** State baris item yang bisa diedit di dalam dialog koreksi transaksi (hanya untuk Admin). */
@@ -331,7 +397,8 @@ private fun TransactionDetailDialog(
     isAdmin: Boolean,
     onDismiss: () -> Unit,
     onSave: (TransactionEntity, List<TransactionItemEntity>, List<Long>) -> Unit,
-    onDeleteRequest: () -> Unit,
+    onVoidRequest: () -> Unit,
+    onReturnRequest: () -> Unit,
     onPrint: () -> Unit,
     onExportPdf: () -> Unit
 ) {
@@ -379,6 +446,32 @@ private fun TransactionDetailDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+                if (transaction.status == "VOIDED") {
+                    Text(
+                        "DIBATALKAN (VOID) oleh ${transaction.voidedByName ?: "-"} · " +
+                            (transaction.voidedAt?.let { dateTimeFormat.format(java.util.Date(it)) } ?: "-"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (detail.returnHistory.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Riwayat Retur/Void",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    detail.returnHistory.forEach { entry ->
+                        Text(
+                            "${if (entry.header.isVoid) "Void" else "Retur"} ${rupiah.format(entry.header.refundAmount)} " +
+                                "oleh ${entry.header.processedByName} · ${dateTimeFormat.format(java.util.Date(entry.header.createdAt))} " +
+                                "— \"${entry.header.reason}\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
 
@@ -479,15 +572,28 @@ private fun TransactionDetailDialog(
                 // Koreksi" selalu punya ruang penuh selebar dialog dan teksnya tidak
                 // terpotong jadi beberapa baris ("Simp/an/Kore/ksi") di layar sempit.
                 Column(Modifier.fillMaxWidth()) {
-                    if (isAdmin) {
-                        TextButton(
-                            onClick = onDeleteRequest,
-                            enabled = !detail.isSaving,
-                            modifier = Modifier.align(Alignment.Start)
+                    if (transaction.status != "VOIDED") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Hapus Transaksi", color = MaterialTheme.colorScheme.error)
+                            OutlinedButton(
+                                onClick = onReturnRequest,
+                                enabled = !detail.isSaving,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Retur Barang", maxLines = 1)
+                            }
+                            if (isAdmin) {
+                                TextButton(
+                                    onClick = onVoidRequest,
+                                    enabled = !detail.isSaving
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Void", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
                         Spacer(Modifier.height(8.dp))
                     }
@@ -497,7 +603,7 @@ private fun TransactionDetailDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(onClick = onDismiss) { Text(if (isAdmin) "Batal" else "Tutup") }
-                        if (isAdmin) {
+                        if (isAdmin && transaction.status != "VOIDED") {
                             Spacer(Modifier.width(8.dp))
                             Button(
                                 onClick = {
@@ -570,6 +676,152 @@ private fun SummaryCard(modifier: Modifier = Modifier, label: String, value: Str
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** State satu baris item yang bisa dipilih untuk diretur (qty & apakah layak masuk stok lagi). */
+private class ReturnRowState(val item: TransactionItemEntity, val maxQty: Int) {
+    var qty by mutableStateOf("0")
+    var restocked by mutableStateOf(true)
+}
+
+/**
+ * Dialog proses Retur Barang: pilih item & qty yang dikembalikan pelanggan (dibatasi maksimal
+ * sisa qty yang belum pernah diretur sebelumnya — lihat TransactionDao.getReturnedQuantityForItem
+ * untuk aturan yang sama di layer data), tandai layak jual lagi atau rusak, isi alasan wajib,
+ * lalu tentukan nominal & metode pengembalian uang (default = total harga item terpilih,
+ * proporsional terhadap diskon per-item, tapi boleh diedit manual).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReturnDialog(
+    detail: TransactionDetailUiState,
+    onDismiss: () -> Unit,
+    onConfirm: (items: List<ReturnItemRequest>, reason: String, refundAmount: Double, refundMethod: PaymentMethod?) -> Unit
+) {
+    val alreadyReturnedByItem = remember(detail.transaction.id) {
+        detail.returnHistory.flatMap { it.items }
+            .groupBy { it.transactionItemId }
+            .mapValues { (_, itemRows) -> itemRows.sumOf { it.quantityReturned } }
+    }
+
+    val rows = remember(detail.transaction.id) {
+        detail.items.mapNotNull { item ->
+            val maxQty = item.quantity - (alreadyReturnedByItem[item.id] ?: 0)
+            if (maxQty <= 0) null else ReturnRowState(item, maxQty)
+        }
+    }
+
+    var reason by remember { mutableStateOf("") }
+    var refundMethod by remember { mutableStateOf<PaymentMethod?>(detail.transaction.paymentMethod) }
+    var refundAmountText by remember { mutableStateOf("") }
+
+    val selectedTotal = rows.sumOf { row ->
+        val qty = row.qty.toIntOrNull() ?: 0
+        val unitNet = if (row.item.quantity > 0) row.item.lineTotal / row.item.quantity else 0.0
+        unitNet * qty
+    }
+    val selectedItems = rows.mapNotNull { row ->
+        val qty = row.qty.toIntOrNull() ?: 0
+        if (qty <= 0) null else ReturnItemRequest(row.item.id, qty, row.restocked)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large) {
+            Column(
+                Modifier
+                    .padding(20.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text("Retur Barang", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    detail.transaction.invoiceNumber,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (rows.isEmpty()) {
+                    Text("Semua item di transaksi ini sudah diretur seluruhnya.")
+                } else {
+                    rows.forEach { row ->
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            Text("${row.item.productNameSnapshot} (maks ${row.maxQty})", fontWeight = FontWeight.Medium)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = row.qty,
+                                    onValueChange = { text ->
+                                        val digits = text.filter { it.isDigit() }
+                                        row.qty = if (digits.isEmpty()) "0" else (digits.toIntOrNull() ?: 0).coerceIn(0, row.maxQty).toString()
+                                    },
+                                    label = { Text("Qty retur") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = row.restocked, onCheckedChange = { row.restocked = it })
+                                    Text("Layak jual lagi", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("Alasan retur (wajib)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Text("Metode Pengembalian Uang", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(PaymentMethod.CASH, PaymentMethod.DEBIT_CREDIT, PaymentMethod.QRIS).forEach { method ->
+                        FilterChip(
+                            selected = refundMethod == method,
+                            onClick = { refundMethod = method },
+                            label = { Text(method.name) }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = refundAmountText.ifEmpty { selectedTotal.toInt().toString() },
+                    onValueChange = { refundAmountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Nominal Refund") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Text(
+                    "Default dihitung otomatis dari item terpilih, bisa diubah manual bila perlu.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss) { Text("Batal") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        enabled = selectedItems.isNotEmpty() && reason.isNotBlank() && !detail.isSaving,
+                        onClick = {
+                            val amount = refundAmountText.toDoubleOrNull() ?: selectedTotal
+                            onConfirm(selectedItems, reason.trim(), amount, refundMethod)
+                        }
+                    ) {
+                        Text("Proses Retur")
+                    }
+                }
+            }
         }
     }
 }

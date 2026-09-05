@@ -21,6 +21,17 @@ object Permission {
     fun canManageBackup(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
         isAdminOrPinDisabled(user, pinLoginEnabled)
 
+    // Retur barang boleh diproses Kasir maupun Admin — supaya pelanggan tidak perlu menunggu
+    // Admin datang cuma untuk retur barang. Alasan retur tetap WAJIB diisi di layer UI/ViewModel
+    // untuk akuntabilitas, dan setiap retur mencatat processedByName (lihat TransactionRepository).
+    fun canProcessReturn(user: UserEntity?, pinLoginEnabled: Boolean): Boolean = true
+
+    // Void (batalkan transaksi sepenuhnya) HANYA Admin — beda dari retur, void meniadakan
+    // transaksi seolah tidak pernah terjadi sama sekali, jadi risikonya lebih besar kalau
+    // disalahgunakan (mis. kasir menutupi transaksi yang uangnya sudah diambil).
+    fun canVoidTransaction(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
+        isAdminOrPinDisabled(user, pinLoginEnabled)
+
     private fun isAdminOrPinDisabled(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
         if (!pinLoginEnabled) return true
         return user?.role == UserRole.ADMIN

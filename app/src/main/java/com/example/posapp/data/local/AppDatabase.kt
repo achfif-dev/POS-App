@@ -27,6 +27,8 @@ import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
+import com.example.posapp.data.local.entity.TransactionReturnEntity
+import com.example.posapp.data.local.entity.TransactionReturnItemEntity
 import com.example.posapp.data.local.entity.UserEntity
 import com.example.posapp.data.local.entity.UserRole
 
@@ -69,9 +71,11 @@ class Converters {
         ExpenseEntity::class,
         ShiftEntity::class,
         CustomerEntity::class,
-        DebtPaymentEntity::class
+        DebtPaymentEntity::class,
+        TransactionReturnEntity::class,
+        TransactionReturnItemEntity::class
     ],
-    version = 10, // v10: users.pinSalt (migrasi hash PIN ke PBKDF2 bergaram) + unique index invoiceNumber
+    version = 11, // v11: fitur Retur/Refund & Void Transaksi (transactions.status/returnedAmount/voided*, tabel transaction_returns & transaction_return_items)
     // exportSchema = true: mulai v10, setiap build menyimpan snapshot skema JSON ke app/schemas/
     // (lihat room.schemaLocation di app/build.gradle.kts). WAJIB commit folder schemas/ ke Git.
     // Ini yang memungkinkan migrasi berikutnya (v10 -> v11, dst.) diuji otomatis dengan

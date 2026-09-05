@@ -30,7 +30,7 @@ object DatabaseModule {
             // Migrasi resmi wajib untuk setiap kenaikan versi (lihat Migrations.kt) — database
             // ini sudah dipakai di instalasi nyata, migrasi destruktif akan menghapus seluruh
             // data toko (produk, transaksi, stok, piutang) begitu skema berubah.
-            .addMigrations(com.example.posapp.data.local.MIGRATION_9_10)
+            .addMigrations(com.example.posapp.data.local.MIGRATION_9_10, com.example.posapp.data.local.MIGRATION_10_11)
             // Hanya untuk skenario downgrade (mis. pasang ulang APK versi lama secara tidak
             // sengaja) — kasus langka yang aman diberi fallback destruktif karena versi
             // skema yang lebih baru tidak mungkin dibaca oleh kode yang lebih lama.

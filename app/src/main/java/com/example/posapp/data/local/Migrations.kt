@@ -53,3 +53,62 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         )
     }
 }
+
+/**
+ * v10 -> v11: Fitur Retur/Refund & Void Transaksi.
+ * 1. Kolom baru di `transactions`: `status` (COMPLETED/VOIDED), `returnedAmount` (akumulasi
+ *    nominal yang sudah diretur), `voidedByName` & `voidedAt` (jejak audit void).
+ * 2. Tabel baru `transaction_returns` (header retur/void) & `transaction_return_items`
+ *    (rincian item yang diretur per baris retur) — lihat ReturnEntity.kt untuk penjelasan model.
+ * Baris transaksi lama otomatis dianggap status='COMPLETED' & returnedAmount=0 (DEFAULT), jadi
+ * tidak ada data yang berubah maknanya untuk transaksi yang sudah ada.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'COMPLETED'")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN returnedAmount REAL NOT NULL DEFAULT 0.0")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN voidedByName TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN voidedAt INTEGER DEFAULT NULL")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS transaction_returns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                transactionId INTEGER NOT NULL,
+                isVoid INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                refundAmount REAL NOT NULL,
+                refundMethod TEXT DEFAULT NULL,
+                processedByName TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                FOREIGN KEY(transactionId) REFERENCES transactions(id) ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_transaction_returns_transactionId ON transaction_returns(transactionId)"
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS transaction_return_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                returnId INTEGER NOT NULL,
+                transactionItemId INTEGER NOT NULL,
+                productId INTEGER NOT NULL,
+                variantId INTEGER DEFAULT NULL,
+                quantityReturned INTEGER NOT NULL,
+                restocked INTEGER NOT NULL,
+                FOREIGN KEY(returnId) REFERENCES transaction_returns(id) ON DELETE CASCADE,
+                FOREIGN KEY(transactionItemId) REFERENCES transaction_items(id) ON DELETE RESTRICT
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_transaction_return_items_returnId ON transaction_return_items(returnId)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_transaction_return_items_transactionItemId ON transaction_return_items(transactionItemId)"
+        )
+    }
+}
