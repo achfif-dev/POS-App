@@ -72,7 +72,13 @@ class Converters {
         DebtPaymentEntity::class
     ],
     version = 10, // v10: users.pinSalt (migrasi hash PIN ke PBKDF2 bergaram) + unique index invoiceNumber
-    exportSchema = false // App full offline, tidak butuh histori schema untuk migrasi terjadwal server
+    // exportSchema = true: mulai v10, setiap build menyimpan snapshot skema JSON ke app/schemas/
+    // (lihat room.schemaLocation di app/build.gradle.kts). WAJIB commit folder schemas/ ke Git.
+    // Ini yang memungkinkan migrasi berikutnya (v10 -> v11, dst.) diuji otomatis dengan
+    // MigrationTestHelper terhadap skema versi sebelumnya yang SUNGGUHAN, bukan cuma dugaan.
+    // Riwayat sebelum v10 tidak tersedia (dulu exportSchema=false) — MIGRATION_9_10 sudah
+    // divalidasi manual terhadap struktur entity v9 yang tercatat di komentar Migrations.kt.
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
