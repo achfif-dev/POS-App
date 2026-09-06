@@ -40,6 +40,24 @@ object Permission {
     fun canVoidTransaction(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
         isAdminOrPinDisabled(user, pinLoginEnabled)
 
+    // Manajemen Produk (tambah/ubah/hapus produk & kategori, termasuk harga beli/margin) —
+    // level sama seperti Expenses: ADMIN & MANAGER boleh, KASIR TIDAK. Sebelumnya rute
+    // "products" tidak digerbang sama sekali (audit 2026-09-06) sehingga kasir bisa melihat
+    // & mengubah harga beli/margin toko lewat layar ini. Sekarang digerbang independen di
+    // MainActivity, sama seperti Expenses.
+    fun canManageProducts(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
+        if (!pinLoginEnabled) return true
+        return user?.role == UserRole.ADMIN || user?.role == UserRole.MANAGER
+    }
+
+    // Stok Opname (set stok ke hasil hitung fisik) HANYA Admin — beda dari stok masuk/keluar
+    // biasa yang boleh dicatat kasir/manager saat menerima barang. Opname bisa menutupi selisih
+    // stok akibat kecurangan/kesalahan, jadi risikonya sama seperti Void Transaksi. Sebelumnya
+    // StockViewModel.adjustStock() menerima tipe "OPNAME" dari siapa pun tanpa cek role (audit
+    // 2026-09-06).
+    fun canPerformStockOpname(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
+        isAdminOrPinDisabled(user, pinLoginEnabled)
+
     private fun isAdminOrPinDisabled(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
         if (!pinLoginEnabled) return true
         return user?.role == UserRole.ADMIN

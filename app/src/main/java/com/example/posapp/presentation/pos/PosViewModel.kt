@@ -57,7 +57,11 @@ data class PosUiState(
     val isProcessing: Boolean = false,
     val storeProfile: StoreProfile = StoreProfile(),
     val cashierName: String? = null,
-    val isAdmin: Boolean = true
+    val isAdmin: Boolean = true,
+    // Tombol "Produk" di top bar Kasir — ADMIN & MANAGER, KASIR ditolak (lihat
+    // Permission.canManageProducts). Rute "products" tetap digerbang independen di
+    // MainActivity sebagai lapis kedua (audit 2026-09-06).
+    val canManageProducts: Boolean = true
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -117,7 +121,8 @@ class PosViewModel @Inject constructor(
             isProcessing = processing,
             storeProfile = profile,
             cashierName = user?.name,
-            isAdmin = user == null || user.role == UserRole.ADMIN
+            isAdmin = user == null || user.role == UserRole.ADMIN,
+            canManageProducts = com.example.posapp.domain.auth.Permission.canManageProducts(user, profile.pinLoginEnabled)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PosUiState())
 
@@ -283,7 +288,7 @@ class PosViewModel @Inject constructor(
         val clampedPoints = points.coerceIn(0L, minOf(customer.loyaltyPoints, maxPointsBySpend))
         _cart.value = current.copy(
             loyaltyPointsRedeemed = clampedPoints,
-            loyaltyDiscount = clampedPoints * profile.loyaltyPointValueRupiah
+            loyaltyDiscount = (clampedPoints * profile.loyaltyPointValueRupiah).toDouble()
         )
     }
 

@@ -2,17 +2,20 @@ package com.example.posapp.presentation.stock
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
 import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.ProductRepository
+import com.example.posapp.domain.auth.Permission
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -27,8 +30,19 @@ class StockViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val categoryRepository: CategoryRepository,
     private val supplierRepository: com.example.posapp.data.repository.SupplierRepository,
+    private val sessionManager: SessionManager,
     storeProfileRepository: com.example.posapp.data.settings.StoreProfileRepository
 ) : ViewModel() {
+
+    /** Stok Opname HANYA Admin (lihat Permission.canPerformStockOpname) — dipakai StockScreen
+     * untuk menyembunyikan opsi "Set Opname" bagi non-admin. Pertahanan lapis kedua ada di
+     * [adjustStock]/[adjustVariantStock] yang menolak tipe OPNAME kalau dipanggil tanpa izin,
+     * jadi UI yang disembunyikan bukan satu-satunya penghalang (audit 2026-09-06). */
+    val canPerformOpname: StateFlow<Boolean> = combine(
+        sessionManager.currentUser,
+        storeProfileRepository.profile
+    ) { user, profile -> Permission.canPerformStockOpname(user, profile.pinLoginEnabled) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val products: StateFlow<List<ProductEntity>> = productRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -66,6 +80,10 @@ class StockViewModel @Inject constructor(
             viewModelScope.launch { _events.emit(StockEvent.ShowMessage("Jumlah tidak boleh negatif")) }
             return
         }
+        if (type == "OPNAME" && !canPerformOpname.value) {
+            viewModelScope.launch { _events.emit(StockEvent.ShowMessage("Hanya Admin yang boleh melakukan stok opname")) }
+            return
+        }
         viewModelScope.launch {
             productRepository.adjustStock(productId, type, quantity, reason)
             _events.emit(StockEvent.ShowMessage("Stok berhasil diperbarui"))
@@ -76,6 +94,10 @@ class StockViewModel @Inject constructor(
     fun adjustVariantStock(productId: Long, variant: ProductVariantEntity, type: String, quantity: Int, reason: String?) {
         if (quantity < 0) {
             viewModelScope.launch { _events.emit(StockEvent.ShowMessage("Jumlah tidak boleh negatif")) }
+            return
+        }
+        if (type == "OPNAME" && !canPerformOpname.value) {
+            viewModelScope.launch { _events.emit(StockEvent.ShowMessage("Hanya Admin yang boleh melakukan stok opname")) }
             return
         }
         viewModelScope.launch {

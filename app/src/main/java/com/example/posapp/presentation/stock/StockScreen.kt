@@ -41,6 +41,7 @@ fun StockScreen(
     val categoryNamesById by viewModel.categoryNamesById.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val supplierPoEnabled by viewModel.supplierPoEnabled.collectAsState()
+    val canPerformOpname by viewModel.canPerformOpname.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var adjustingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var pickingVariantsFor by remember { mutableStateOf<ProductEntity?>(null) }
@@ -120,6 +121,7 @@ fun StockScreen(
             title = "Sesuaikan Stok: ${product.name}",
             currentStock = product.stock,
             unit = product.unit,
+            canOpname = canPerformOpname,
             onDismiss = { adjustingProduct = null },
             onConfirm = { type, qty, reason ->
                 viewModel.adjustStock(product.id, type, qty, reason)
@@ -145,6 +147,7 @@ fun StockScreen(
             title = "Sesuaikan Stok: ${product.name} (${variant.variantLabel})",
             currentStock = variant.stock,
             unit = product.unit,
+            canOpname = canPerformOpname,
             onDismiss = { adjustingVariant = null },
             onConfirm = { type, qty, reason ->
                 viewModel.adjustVariantStock(product.id, variant, type, qty, reason)
@@ -252,6 +255,7 @@ private fun StockAdjustDialog(
     title: String,
     currentStock: Int,
     unit: String = "pcs",
+    canOpname: Boolean = true,
     onDismiss: () -> Unit,
     onConfirm: (type: String, quantity: Int, reason: String?) -> Unit
 ) {
@@ -269,7 +273,13 @@ private fun StockAdjustDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = type == "IN", onClick = { type = "IN" }, label = { Text("Stok Masuk") })
                     FilterChip(selected = type == "OUT", onClick = { type = "OUT" }, label = { Text("Stok Keluar") })
-                    FilterChip(selected = type == "OPNAME", onClick = { type = "OPNAME" }, label = { Text("Set Opname") })
+                    // Set Opname disembunyikan untuk non-admin (lihat Permission.canPerformStockOpname).
+                    // StockViewModel.adjustStock/adjustVariantStock tetap menolak tipe OPNAME dari
+                    // non-admin walau chip ini entah bagaimana tetap terkirim, jadi ini murni UX,
+                    // bukan satu-satunya penghalang.
+                    if (canOpname) {
+                        FilterChip(selected = type == "OPNAME", onClick = { type = "OPNAME" }, label = { Text("Set Opname") })
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))

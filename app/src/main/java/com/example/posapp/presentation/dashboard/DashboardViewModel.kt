@@ -8,6 +8,7 @@ import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfileRepository
+import com.example.posapp.domain.auth.Permission
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,9 @@ data class DashboardUiState(
     val lowStockCount: Int = 0,
     val revenueTrend: List<DayRevenue> = emptyList(),
     val isAdmin: Boolean = true,
+    // Menu "Produk" (termasuk harga beli/margin) — ADMIN & MANAGER, KASIR ditolak. Sebelumnya
+    // menu ini tampil untuk semua role tanpa syarat (audit 2026-09-06).
+    val canManageProducts: Boolean = true,
     val isLoading: Boolean = true
 )
 
@@ -61,6 +65,7 @@ class DashboardViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         cashierName = user?.name,
                         isAdmin = user == null || user.role == UserRole.ADMIN,
+                        canManageProducts = Permission.canManageProducts(user, storeProfile.pinLoginEnabled),
                         lowStockCount = lowStock.size,
                         storeName = storeProfile.name,
                         storeLogoPath = storeProfile.logoImagePath

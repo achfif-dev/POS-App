@@ -147,10 +147,15 @@ fun PosScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = onOpenProducts) {
-                        Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Produk")
+                    // Disembunyikan dari Kasir — lihat Permission.canManageProducts. Rute
+                    // "products" tetap digerbang independen di MainActivity sebagai lapis kedua
+                    // (audit 2026-09-06).
+                    if (uiState.canManageProducts) {
+                        TextButton(onClick = onOpenProducts) {
+                            Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Produk")
+                        }
                     }
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu lainnya")

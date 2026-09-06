@@ -184,7 +184,14 @@ fun DashboardScreen(
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    QuickMenuButton(Modifier.weight(1f), Icons.Default.Inventory2, "Produk", onOpenProducts)
+                    // "Produk" (harga beli/margin) disembunyikan dari Kasir — lihat
+                    // Permission.canManageProducts. Rute "products" tetap digerbang independen
+                    // di MainActivity sebagai lapis kedua (audit 2026-09-06).
+                    if (uiState.canManageProducts) {
+                        QuickMenuButton(Modifier.weight(1f), Icons.Default.Inventory2, "Produk", onOpenProducts)
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                     QuickMenuButton(Modifier.weight(1f), Icons.AutoMirrored.Filled.TrendingUp, "Laporan", onOpenReports)
                     QuickMenuButton(Modifier.weight(1f), Icons.Default.LockClock, "Shift", onOpenShift)
                 }

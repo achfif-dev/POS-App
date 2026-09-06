@@ -10,6 +10,13 @@ import com.example.posapp.domain.model.Cart
  */
 object CheckoutValidator {
 
+    // Toleransi pembulatan untuk perbandingan nominal Rupiah bertipe Double. Semua harga di app
+    // ini bilangan rupiah utuh, tapi diskon persen (mis. 12.5%) atau pajak bisa menghasilkan
+    // pecahan yang tidak presisi di representasi biner Double (mis. 0.1 + 0.2 != 0.3). Tanpa
+    // toleransi ini, pembayaran pas (uang pas) bisa saja ditolak keliru sebagai "belum cukup"
+    // hanya karena selisih floating-point sebesar sepersekian rupiah.
+    private const val AMOUNT_EPSILON = 0.5
+
     sealed class ValidationResult {
         object Valid : ValidationResult()
         data class Invalid(val message: String) : ValidationResult()
@@ -39,7 +46,7 @@ object CheckoutValidator {
         }
 
         val paid = totalPaid(validPayments)
-        if (paid < cart.total) {
+        if (paid < cart.total - AMOUNT_EPSILON) {
             return ValidationResult.Invalid("Total pembayaran belum mencukupi total belanja")
         }
 
