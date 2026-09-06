@@ -212,7 +212,15 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
         ) {
             CustomerDetailScreen(onBack = { navController.popBackStack() })
         }
-        composable("products") { ProductScreen(onBack = { navController.popBackStack() }) }
+        composable("products") {
+            // Manajemen Produk (termasuk harga beli/margin) — ADMIN & MANAGER, KASIR ditolak.
+            // Sebelumnya rute ini tidak digerbang sama sekali (audit 2026-09-06).
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canManageProducts(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                ProductScreen(onBack = { navController.popBackStack() })
+            }
+        }
         composable("scanner") {
             BarcodeScannerScreen(
                 onBarcodeDetected = { sku ->
