@@ -47,7 +47,23 @@ data class StoreProfile(
     /** Nama printer Bluetooth (dari daftar perangkat ter-pairing) yang dipilih untuk cetak
      * struk. Null = pakai printer ter-pairing pertama yang ditemukan (perilaku lama, dipakai
      * kalau toko hanya punya satu printer atau belum pernah memilih). Lihat PrinterRepository. */
-    val selectedPrinterName: String? = null
+    val selectedPrinterName: String? = null,
+    /** Tipe bisnis toko untuk menyesuaikan fitur relevan yang ditampilkan: RETAIL, FNB
+     * (restoran/kafe — menambah tag nomor meja/pesanan di kasir), atau GENERAL (netral). */
+    val businessType: String = "GENERAL",
+    /** Aktifkan program poin loyalitas pelanggan. Nonaktif default agar tidak menambah
+     * elemen UI untuk toko yang tidak butuh. */
+    val loyaltyEnabled: Boolean = false,
+    /** Rp dibelanjakan untuk mendapat 1 poin (mis. 10000 = tiap Rp10.000 belanja = 1 poin). */
+    val loyaltyRupiahPerPoint: Long = 10000,
+    /** Nilai tukar 1 poin dalam Rupiah saat dipakai sebagai potongan pembayaran. */
+    val loyaltyPointValueRupiah: Long = 100,
+    /** Tampilkan tombol "Kirim Struk via WhatsApp" setelah transaksi. */
+    val whatsappReceiptEnabled: Boolean = true,
+    /** Aktifkan input nomor meja/nama pemesan di kasir — relevan untuk mode Restoran/Kafe. */
+    val tableTaggingEnabled: Boolean = false,
+    /** Aktifkan modul Pemasok & draf Pesanan Pembelian dari daftar stok tipis. */
+    val supplierPoEnabled: Boolean = false
 )
 
 /**
@@ -85,6 +101,13 @@ class StoreProfileRepository @Inject constructor(
         val OUTLET_NAME = stringPreferencesKey("outlet_name")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
         val SELECTED_PRINTER_NAME = stringPreferencesKey("selected_printer_name")
+        val BUSINESS_TYPE = stringPreferencesKey("business_type")
+        val LOYALTY_ENABLED = booleanPreferencesKey("loyalty_enabled")
+        val LOYALTY_RUPIAH_PER_POINT = androidx.datastore.preferences.core.longPreferencesKey("loyalty_rupiah_per_point")
+        val LOYALTY_POINT_VALUE_RUPIAH = androidx.datastore.preferences.core.longPreferencesKey("loyalty_point_value_rupiah")
+        val WHATSAPP_RECEIPT_ENABLED = booleanPreferencesKey("whatsapp_receipt_enabled")
+        val TABLE_TAGGING_ENABLED = booleanPreferencesKey("table_tagging_enabled")
+        val SUPPLIER_PO_ENABLED = booleanPreferencesKey("supplier_po_enabled")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -107,7 +130,14 @@ class StoreProfileRepository @Inject constructor(
             outletId = prefs[Keys.OUTLET_ID] ?: "",
             outletName = prefs[Keys.OUTLET_NAME] ?: "Cabang Utama",
             cloudSyncEnabled = prefs[Keys.CLOUD_SYNC_ENABLED] ?: false,
-            selectedPrinterName = prefs[Keys.SELECTED_PRINTER_NAME]
+            selectedPrinterName = prefs[Keys.SELECTED_PRINTER_NAME],
+            businessType = prefs[Keys.BUSINESS_TYPE] ?: "GENERAL",
+            loyaltyEnabled = prefs[Keys.LOYALTY_ENABLED] ?: false,
+            loyaltyRupiahPerPoint = prefs[Keys.LOYALTY_RUPIAH_PER_POINT] ?: 10000L,
+            loyaltyPointValueRupiah = prefs[Keys.LOYALTY_POINT_VALUE_RUPIAH] ?: 100L,
+            whatsappReceiptEnabled = prefs[Keys.WHATSAPP_RECEIPT_ENABLED] ?: true,
+            tableTaggingEnabled = prefs[Keys.TABLE_TAGGING_ENABLED] ?: false,
+            supplierPoEnabled = prefs[Keys.SUPPLIER_PO_ENABLED] ?: false
         )
     }
 
@@ -209,5 +239,31 @@ class StoreProfileRepository @Inject constructor(
         context.storeProfileDataStore.edit { prefs ->
             if (name == null) prefs.remove(Keys.SELECTED_PRINTER_NAME) else prefs[Keys.SELECTED_PRINTER_NAME] = name
         }
+    }
+
+    /** @param type "RETAIL", "FNB", atau "GENERAL". */
+    suspend fun updateBusinessType(type: String) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.BUSINESS_TYPE] = type }
+    }
+
+    /** Aktifkan/nonaktifkan program poin loyalitas & atur nilai tukarnya. */
+    suspend fun updateLoyaltySettings(enabled: Boolean, rupiahPerPoint: Long, pointValueRupiah: Long) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.LOYALTY_ENABLED] = enabled
+            prefs[Keys.LOYALTY_RUPIAH_PER_POINT] = rupiahPerPoint.coerceAtLeast(1)
+            prefs[Keys.LOYALTY_POINT_VALUE_RUPIAH] = pointValueRupiah.coerceAtLeast(1)
+        }
+    }
+
+    suspend fun setWhatsappReceiptEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.WHATSAPP_RECEIPT_ENABLED] = enabled }
+    }
+
+    suspend fun setTableTaggingEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.TABLE_TAGGING_ENABLED] = enabled }
+    }
+
+    suspend fun setSupplierPoEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.SUPPLIER_PO_ENABLED] = enabled }
     }
 }

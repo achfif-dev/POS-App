@@ -4,7 +4,11 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class UserRole { ADMIN, KASIR }
+// MANAGER: peran baru di antara KASIR dan ADMIN — bisa jual & retur seperti Kasir, PLUS akses
+// Beban Usaha (catat pengeluaran operasional toko), tapi TIDAK bisa: Void transaksi, koreksi
+// harga/qty transaksi, kelola Pengguna & PIN, ubah Profil Toko/pajak, backup/restore, atau akses
+// Cloud Sync & Multi-Outlet — semua itu tetap murni ADMIN-only (lihat Permission.kt).
+enum class UserRole { ADMIN, MANAGER, KASIR }
 
 /**
  * Pengguna aplikasi (pemilik toko/admin & kasir) untuk fitur login PIN. PIN asli tidak pernah

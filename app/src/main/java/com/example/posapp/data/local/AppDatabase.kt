@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import com.example.posapp.data.local.dao.AuditLogDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
@@ -11,8 +12,10 @@ import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
 import com.example.posapp.data.local.dao.ShiftDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
+import com.example.posapp.data.local.dao.SupplierDao
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.dao.UserDao
+import com.example.posapp.data.local.entity.AuditLogEntity
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.DebtPaymentEntity
@@ -24,6 +27,7 @@ import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.ShiftEntity
 import com.example.posapp.data.local.entity.ShiftStatus
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
+import com.example.posapp.data.local.entity.SupplierEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
@@ -73,9 +77,11 @@ class Converters {
         CustomerEntity::class,
         DebtPaymentEntity::class,
         TransactionReturnEntity::class,
-        TransactionReturnItemEntity::class
+        TransactionReturnItemEntity::class,
+        AuditLogEntity::class,
+        SupplierEntity::class
     ],
-    version = 11, // v11: fitur Retur/Refund & Void Transaksi (transactions.status/returnedAmount/voided*, tabel transaction_returns & transaction_return_items)
+    version = 13, // v13: loyaltyPoints di customers, tabel suppliers + products.supplierId
     // exportSchema = true: mulai v10, setiap build menyimpan snapshot skema JSON ke app/schemas/
     // (lihat room.schemaLocation di app/build.gradle.kts). WAJIB commit folder schemas/ ke Git.
     // Ini yang memungkinkan migrasi berikutnya (v10 -> v11, dst.) diuji otomatis dengan
@@ -95,6 +101,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
     abstract fun shiftDao(): ShiftDao
     abstract fun customerDao(): CustomerDao
+    abstract fun auditLogDao(): AuditLogDao
+    abstract fun supplierDao(): SupplierDao
 
     companion object {
         const val DATABASE_NAME = "pos_database"

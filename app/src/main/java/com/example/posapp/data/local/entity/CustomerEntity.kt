@@ -18,7 +18,13 @@ data class CustomerEntity(
     val phone: String? = null,
     val address: String? = null,
     val isActive: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Saldo poin loyalitas saat ini (v13). Ditambah otomatis saat checkout (lihat
+     * CheckoutUseCase) sebesar total/StoreProfile.loyaltyRupiahPerPoint, dan dikurangi saat
+     * pelanggan menukar poin sebagai potongan pembayaran. Disimpan sebagai kolom langsung
+     * (bukan dihitung ulang dari histori) karena penukaran poin adalah aksi tersendiri yang
+     * tidak punya jejak "transaksi asli" seperti piutang. */
+    val loyaltyPoints: Long = 0
 )
 
 /** Satu pelunasan (cicilan/lunas) piutang seorang pelanggan. */

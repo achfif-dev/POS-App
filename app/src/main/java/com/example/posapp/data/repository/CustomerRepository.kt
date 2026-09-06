@@ -53,6 +53,13 @@ class CustomerRepository @Inject constructor(
      * sama dengan sisa piutang — pelanggan boleh mencicil; saldo piutang otomatis berkurang
      * karena selalu dihitung ulang dari total pelunasan yang tercatat.
      */
+    /** [delta] boleh negatif (penukaran poin) atau positif (poin didapat dari belanja). Dipanggil
+     * oleh CheckoutUseCase setelah transaksi berhasil disimpan — lihat StoreProfile.loyaltyEnabled. */
+    suspend fun adjustLoyaltyPoints(customerId: Long, delta: Long) {
+        if (delta == 0L) return
+        customerDao.adjustLoyaltyPoints(customerId, delta)
+    }
+
     suspend fun recordPayment(customerId: Long, amount: Double, note: String? = null): RecordPaymentResult {
         if (amount <= 0) {
             return RecordPaymentResult.Error("Nominal pelunasan harus lebih dari 0")

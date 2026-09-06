@@ -3,6 +3,7 @@ package com.example.posapp.di
 import android.content.Context
 import androidx.room.Room
 import com.example.posapp.data.local.AppDatabase
+import com.example.posapp.data.local.dao.AuditLogDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
@@ -30,7 +31,12 @@ object DatabaseModule {
             // Migrasi resmi wajib untuk setiap kenaikan versi (lihat Migrations.kt) — database
             // ini sudah dipakai di instalasi nyata, migrasi destruktif akan menghapus seluruh
             // data toko (produk, transaksi, stok, piutang) begitu skema berubah.
-            .addMigrations(com.example.posapp.data.local.MIGRATION_9_10, com.example.posapp.data.local.MIGRATION_10_11)
+            .addMigrations(
+                com.example.posapp.data.local.MIGRATION_9_10,
+                com.example.posapp.data.local.MIGRATION_10_11,
+                com.example.posapp.data.local.MIGRATION_11_12,
+                com.example.posapp.data.local.MIGRATION_12_13
+            )
             // Hanya untuk skenario downgrade (mis. pasang ulang APK versi lama secara tidak
             // sengaja) — kasus langka yang aman diberi fallback destruktif karena versi
             // skema yang lebih baru tidak mungkin dibaca oleh kode yang lebih lama.
@@ -64,4 +70,10 @@ object DatabaseModule {
 
     @Provides
     fun provideCustomerDao(db: AppDatabase): CustomerDao = db.customerDao()
+
+    @Provides
+    fun provideAuditLogDao(db: AppDatabase): AuditLogDao = db.auditLogDao()
+
+    @Provides
+    fun provideSupplierDao(db: AppDatabase): com.example.posapp.data.local.dao.SupplierDao = db.supplierDao()
 }

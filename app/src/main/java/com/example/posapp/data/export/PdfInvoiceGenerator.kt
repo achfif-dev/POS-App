@@ -92,6 +92,10 @@ class PdfInvoiceGenerator @Inject constructor(
         }
         canvas.drawText("No: ${transaction.invoiceNumber}", 8f, y, normalPaint)
         y += 12f
+        transaction.note?.takeIf { it.isNotBlank() }?.let {
+            canvas.drawText("Meja/Pesanan: $it", 8f, y, normalPaint)
+            y += 12f
+        }
         canvas.drawText(dateFormat.format(Date(transaction.createdAt)), 8f, y, normalPaint)
         y += 12f
         canvas.drawLine(8f, y, pageWidth - 8f, y, normalPaint)

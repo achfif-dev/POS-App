@@ -112,3 +112,56 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
         )
     }
 }
+
+/**
+ * v11 -> v12: Fitur Role Manager & Audit Log.
+ * - Role MANAGER tidak butuh migrasi (kolom `role` di `users` sudah TEXT sejak awal, MANAGER
+ *   cuma nilai string baru yang valid — lihat Converters.fromUserRole/toUserRole).
+ * - Tabel baru `audit_logs`: append-only, sengaja TANPA foreign key ke tabel mana pun (lihat
+ *   AuditLogEntity.kt) supaya jejak aktivitas tidak pernah ikut terhapus oleh CASCADE apa pun.
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                actorName TEXT NOT NULL,
+                actorRole TEXT NOT NULL,
+                action TEXT NOT NULL,
+                description TEXT NOT NULL,
+                createdAt INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+}
+
+/**
+ * v12 -> v13: Program Poin Loyalitas & modul Pemasok/Pesanan Pembelian.
+ * 1. Kolom baru `customers.loyaltyPoints` (default 0) — saldo poin, lihat CustomerEntity.
+ * 2. Tabel baru `suppliers` (nama, telepon, alamat) — dipakai draf PO stok tipis.
+ * 3. Kolom baru `products.supplierId` (nullable, TANPA FK di level DB — lihat catatan di
+ *    ProductEntity.kt) + index biasa untuk query "produk stok tipis per pemasok" tetap cepat.
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE customers ADD COLUMN loyaltyPoints INTEGER NOT NULL DEFAULT 0")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS suppliers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT,
+                address TEXT,
+                isActive INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL("ALTER TABLE products ADD COLUMN supplierId INTEGER DEFAULT NULL")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_products_supplierId ON products(supplierId)")
+    }
+}

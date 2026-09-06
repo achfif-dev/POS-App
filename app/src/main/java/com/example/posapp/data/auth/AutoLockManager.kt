@@ -1,10 +1,18 @@
 package com.example.posapp.data.auth
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import com.example.posapp.data.settings.StoreProfileRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Disediakan sekali di root Composable (lihat MainActivity) supaya layar mana pun bisa
+ * memanggil [AutoLockManager.expectExternalActivityReturn] tanpa AutoLockManager harus
+ * diteruskan manual lewat parameter di setiap Composable/ViewModel. */
+val LocalAutoLockManager = staticCompositionLocalOf<AutoLockManager> {
+    error("LocalAutoLockManager belum di-provide -- pastikan dibungkus CompositionLocalProvider di MainActivity")
+}
 
 /**
  * Kebijakan auto-lock: menutup sesi login (SessionManager.logout()) tanpa menunggu pengguna
@@ -29,10 +37,28 @@ class AutoLockManager @Inject constructor(
     @Volatile private var lastInteractionAt: Long = System.currentTimeMillis()
     @Volatile private var backgroundedAt: Long? = null
 
+    // PERBAIKAN BUG: onStop/onStart MainActivity juga terpicu saat app hanya menyerahkan
+    // foreground sebentar ke activity/app LAIN sebagai bagian dari alur normal DI DALAM
+    // app sendiri -- kamera pengambilan foto produk, pemilih galeri, pemilih file
+    // restore/simpan backup, chooser "Bagikan" untuk PDF invoice/printer, dsb. Tanpa
+    // pembeda, transisi-transisi ini terlihat identik dengan pengguna menekan Home lalu
+    // kembali, sehingga sesi selalu ter-logout paksa begitu kembali -- termasuk PERSIS
+    // kasus "isi foto produk lalu balik ke Login" yang dilaporkan. Layar pemanggil WAJIB
+    // memanggil [expectExternalActivityReturn] tepat sebelum meluncurkan
+    // ActivityResultLauncher.launch(...) atau startActivity(...) semacam itu, supaya
+    // siklus background->foreground berikutnya tidak dianggap "pengguna meninggalkan app".
+    @Volatile private var expectingExternalReturn: Boolean = false
+
     /** Dipanggil dari mana pun ada sinyal bahwa pengguna sedang aktif memakai app (tap layar,
      * berpindah layar, dsb.) — mereset hitung mundur idle-timeout. */
     fun recordInteraction() {
         lastInteractionAt = System.currentTimeMillis()
+    }
+
+    /** Panggil tepat SEBELUM meluncurkan kamera, pemilih galeri/file, atau chooser Bagikan --
+     * transisi background->foreground berikutnya (satu kali) tidak akan memicu auto-lock. */
+    fun expectExternalActivityReturn() {
+        expectingExternalReturn = true
     }
 
     /** Dipanggil dari MainActivity.onStop(): app baru saja tidak terlihat pengguna lagi. */
@@ -42,12 +68,15 @@ class AutoLockManager @Inject constructor(
 
     /** Dipanggil dari MainActivity.onStart(): app kembali terlihat. Mengunci sesi kalau app
      * memang sempat di-background dan PIN login aktif — lock ini TIDAK bersyarat durasi,
-     * sekali di-background langsung minta PIN lagi begitu kembali. */
+     * sekali di-background langsung minta PIN lagi begitu kembali. Kecuali kembalinya ini
+     * memang sudah "diharapkan" (lihat [expectExternalActivityReturn]). */
     suspend fun onAppForegroundedCheckLock() {
         val wasBackgrounded = backgroundedAt != null
         backgroundedAt = null
         lastInteractionAt = System.currentTimeMillis()
-        if (!wasBackgrounded) return
+        val wasExpected = expectingExternalReturn
+        expectingExternalReturn = false
+        if (!wasBackgrounded || wasExpected) return
 
         val profile = storeProfileRepository.profile.first()
         if (profile.pinLoginEnabled && sessionManager.currentUser.value != null) {

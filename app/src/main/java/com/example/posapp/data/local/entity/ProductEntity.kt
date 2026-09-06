@@ -15,13 +15,21 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("sku", unique = true), Index("categoryId")]
+    // supplierId SENGAJA tidak dideklarasikan sebagai Room ForeignKey (lihat MIGRATION_12_13):
+    // menambah kolom via ALTER TABLE tidak bisa sekaligus menambah FK constraint tanpa membangun
+    // ulang seluruh tabel products (berisiko untuk instalasi yang sudah punya data produksi).
+    // Konsistensinya cukup dijaga di level repository (SupplierRepository tidak menghapus baris
+    // pemasok, hanya menonaktifkan lewat isActive — sama seperti pola CustomerEntity).
+    indices = [Index("sku", unique = true), Index("categoryId"), Index("supplierId")]
 )
 data class ProductEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val sku: String,               // barcode / SKU, harus unik
     val categoryId: Long? = null,
+    /** Pemasok utama produk ini (v13) — opsional, dipakai untuk mengelompokkan draf Pesanan
+     * Pembelian per pemasok dari daftar stok tipis. Null = belum diatur / tidak relevan. */
+    val supplierId: Long? = null,
     val purchasePrice: Double,      // harga beli
     val sellPrice: Double,          // harga jual
     val stock: Int,

@@ -14,7 +14,8 @@ data class CustomerWithDebt(
     val name: String,
     val phone: String?,
     val address: String?,
-    val debtBalance: Double
+    val debtBalance: Double,
+    val loyaltyPoints: Long
 )
 
 @Dao
@@ -25,7 +26,7 @@ interface CustomerDao {
 
     @Query(
         """
-        SELECT c.id as id, c.name as name, c.phone as phone, c.address as address,
+        SELECT c.id as id, c.name as name, c.phone as phone, c.address as address, c.loyaltyPoints as loyaltyPoints,
             COALESCE((
                 SELECT SUM(tp.amount) FROM transaction_payments tp
                 JOIN transactions t ON t.id = tp.transactionId
@@ -42,7 +43,7 @@ interface CustomerDao {
 
     @Query(
         """
-        SELECT c.id as id, c.name as name, c.phone as phone, c.address as address,
+        SELECT c.id as id, c.name as name, c.phone as phone, c.address as address, c.loyaltyPoints as loyaltyPoints,
             COALESCE((
                 SELECT SUM(tp.amount) FROM transaction_payments tp
                 JOIN transactions t ON t.id = tp.transactionId
@@ -70,4 +71,11 @@ interface CustomerDao {
 
     @Insert
     suspend fun insertPayment(payment: DebtPaymentEntity): Long
+
+    /** [delta] boleh negatif (penukaran poin) atau positif (poin didapat dari belanja). Dipanggil
+     * oleh CheckoutUseCase setelah transaksi berhasil disimpan — lihat StoreProfile.loyaltyEnabled.
+     * Dibatasi MAX(0, ...) sebagai jaring pengaman terakhir supaya saldo tidak pernah negatif
+     * walau ada bug di lapisan atas yang mengirim delta pengurangan lebih besar dari saldo. */
+    @Query("UPDATE customers SET loyaltyPoints = MAX(0, loyaltyPoints + :delta) WHERE id = :customerId")
+    suspend fun adjustLoyaltyPoints(customerId: Long, delta: Long)
 }

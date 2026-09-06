@@ -136,6 +136,7 @@ class PrinterRepository @Inject constructor(
             if (storeAddress.isNotBlank()) sb.append("[C]$storeAddress\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[L]No: ${transaction.invoiceNumber}\n")
+            transaction.note?.takeIf { it.isNotBlank() }?.let { sb.append("[L]Meja/Pesanan: $it\n") }
             sb.append("[L]${dateFormat.format(Date(transaction.createdAt))}\n")
             sb.append("[C]--------------------------------\n")
 
