@@ -4,6 +4,28 @@ Semua perubahan penting pada proyek ini dicatat di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versioning mengikuti [Semantic Versioning](https://semver.org/).
 
 ## [Unrilis]
+### Ditambahkan
+- **Retur/Refund & Void Transaksi**: tabel baru `transaction_returns` & `transaction_return_items`
+  (migrasi v10 -> v11). Retur boleh diproses Kasir maupun Admin (alasan wajib, per-item bisa
+  ditandai layak jual lagi/rusak, bisa bertahap). Void (batalkan transaksi sepenuhnya) khusus
+  Admin — menggantikan tombol "Hapus Transaksi" lama yang menghapus permanen; sekarang transaksi
+  tetap tersimpan (status VOIDED) untuk audit, hanya dikeluarkan dari perhitungan Laporan.
+- **Role Manager**: peran baru di antara Kasir dan Admin (migrasi v11 -> v12, tanpa perubahan
+  skema — cuma nilai enum baru). Manager bisa jual & retur seperti Kasir, plus akses Beban Usaha
+  & Laba Bersih di Laporan — tapi tetap tidak bisa Void/koreksi transaksi maupun akses
+  Pengaturan/Backup/Manajemen Pengguna (murni Admin-only).
+- **Log Aktivitas**: tabel baru `audit_logs`, mencatat Void, Retur, Koreksi Transaksi, Tambah/
+  Hapus Pengguna, dan Restore Backup (siapa, kapan, alasan). Layar baru di Pengaturan > Log
+  Aktivitas (Admin-only). Jejak Restore Backup sengaja disimpan di file teks terpisah
+  (`restore_audit_log.txt`), BUKAN di tabel `audit_logs` — karena restore menimpa seluruh file
+  database termasuk tabel itu sendiri, jadi jejaknya justru akan ikut hilang kalau disimpan di
+  sana (lihat komentar `RestoreAuditLog.kt`).
+
+### Diperbaiki
+- Bug lama di query Laporan Omzet (`getSalesSummary`): `SUM(t.total)` ikut ter-JOIN dengan baris
+  item transaksi, sehingga omzet transaksi dengan banyak item terhitung berulang kali. Sekarang
+  dihitung dari subquery terpisah yang tidak ikut kelipatan oleh JOIN.
+
 ### Diubah
 - `exportSchema` Room diaktifkan (`true`) + `room.schemaLocation` dikonfigurasi ke `app/schemas/`.
   Mulai sekarang setiap kenaikan versi database menyimpan snapshot skema JSON asli, sehingga
