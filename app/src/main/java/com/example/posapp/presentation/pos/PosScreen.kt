@@ -22,8 +22,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -76,6 +78,7 @@ fun PosScreen(
     onScannedSkuConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     val uiState by viewModel.uiState.collectAsState()
     val lastReceipt by viewModel.lastReceipt.collectAsState()
     var showPaymentSheet by remember { mutableStateOf(false) }
@@ -116,6 +119,7 @@ fun PosScreen(
                     )
                 }
                 is PosEvent.PdfReady -> {
+                    autoLockManager.expectExternalActivityReturn()
                     context.startActivity(
                         Intent.createChooser(viewModel.createShareIntent(event.file), "Bagikan Invoice PDF")
                     )
@@ -236,6 +240,21 @@ fun PosScreen(
                 Text("Keranjang", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
 
+                if (uiState.storeProfile.tableTaggingEnabled) {
+                    var tableTagInput by remember(uiState.cart.tableTag) { mutableStateOf(uiState.cart.tableTag ?: "") }
+                    OutlinedTextField(
+                        value = tableTagInput,
+                        onValueChange = {
+                            tableTagInput = it
+                            viewModel.updateTableTag(it)
+                        },
+                        label = { Text("No. Meja / Nama Pemesan") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 if (uiState.cart.isEmpty) {
                     Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                         Text("Belum ada item", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -290,7 +309,11 @@ fun PosScreen(
             qrisRawContent = uiState.storeProfile.qrisRawContent,
             quickCashAmounts = uiState.storeProfile.quickCashAmountList(),
             customers = customers,
+            loyaltyEnabled = uiState.storeProfile.loyaltyEnabled,
+            loyaltyPointValueRupiah = uiState.storeProfile.loyaltyPointValueRupiah,
             isProcessing = uiState.isProcessing,
+            onApplyLoyaltyRedemption = viewModel::applyLoyaltyRedemption,
+            onClearLoyaltyRedemption = viewModel::clearLoyaltyRedemption,
             onDismiss = { showPaymentSheet = false },
             onConfirm = { payments, customerId -> viewModel.checkout(payments, customerId) }
         )
@@ -300,11 +323,43 @@ fun PosScreen(
         ReceiptDialog(
             transaction = transaction,
             items = items,
+            whatsappReceiptEnabled = uiState.storeProfile.whatsappReceiptEnabled,
+            storeProfile = uiState.storeProfile,
             onDismiss = { viewModel.dismissReceipt() },
             onPrint = { requestPrint() },
             onExportPdf = { viewModel.exportReceiptPdf() }
         )
     }
+}
+
+/** Susun teks struk untuk dikirim via WhatsApp (v13) — dibuat plain text (bukan gambar/PDF)
+ * supaya ringan dan langsung terbaca di chat WA tanpa perlu buka lampiran. */
+private fun buildWhatsappReceiptText(
+    transaction: TransactionEntity,
+    items: List<TransactionItemEntity>,
+    storeProfile: com.example.posapp.data.settings.StoreProfile
+): String {
+    val dateFormat = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+    val sb = StringBuilder()
+    sb.appendLine("*${storeProfile.name}*")
+    if (storeProfile.address.isNotBlank()) sb.appendLine(storeProfile.address)
+    sb.appendLine("No. Invoice: ${transaction.invoiceNumber}")
+    transaction.note?.takeIf { it.isNotBlank() }?.let { sb.appendLine("Meja/Pesanan: $it") }
+    sb.appendLine(dateFormat.format(java.util.Date(transaction.createdAt)))
+    sb.appendLine("------------------------------")
+    items.forEach { item ->
+        sb.appendLine("${item.productNameSnapshot} x${item.quantity}")
+        sb.appendLine("  ${rupiah.format(item.priceSnapshot * item.quantity - item.itemDiscount)}")
+    }
+    sb.appendLine("------------------------------")
+    sb.appendLine("Subtotal: ${rupiah.format(transaction.subtotal)}")
+    if (transaction.discountAmount > 0) sb.appendLine("Diskon: -${rupiah.format(transaction.discountAmount)}")
+    if (transaction.taxAmount > 0) sb.appendLine("Pajak: ${rupiah.format(transaction.taxAmount)}")
+    sb.appendLine("*Total: ${rupiah.format(transaction.total)}*")
+    sb.appendLine("Kembalian: ${rupiah.format(transaction.changeAmount)}")
+    sb.appendLine()
+    sb.appendLine(storeProfile.receiptFooter)
+    return sb.toString()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -370,16 +425,25 @@ private fun VariantPickerSheet(
 private fun ReceiptDialog(
     transaction: TransactionEntity,
     items: List<TransactionItemEntity>,
+    whatsappReceiptEnabled: Boolean = false,
+    storeProfile: com.example.posapp.data.settings.StoreProfile? = null,
     onDismiss: () -> Unit,
     onPrint: () -> Unit,
     onExportPdf: () -> Unit
 ) {
+    val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
+    var showWhatsappInput by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Transaksi Berhasil") },
         text = {
             Column {
                 Text("No. Invoice: ${transaction.invoiceNumber}")
+                transaction.note?.takeIf { it.isNotBlank() }?.let {
+                    Text("Meja/Pesanan: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
                 Spacer(Modifier.height(4.dp))
                 Text("Total: ${rupiah.format(transaction.total)}")
                 Text("Kembalian: ${rupiah.format(transaction.changeAmount)}")
@@ -396,6 +460,13 @@ private fun ReceiptDialog(
         },
         dismissButton = {
             Row {
+                if (whatsappReceiptEnabled && storeProfile != null) {
+                    TextButton(onClick = { showWhatsappInput = true }) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("WA")
+                    }
+                }
                 TextButton(onClick = onExportPdf) {
                     Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -405,6 +476,50 @@ private fun ReceiptDialog(
             }
         }
     )
+
+    if (showWhatsappInput && storeProfile != null) {
+        var phoneInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showWhatsappInput = false },
+            title = { Text("Kirim Struk via WhatsApp") },
+            text = {
+                OutlinedTextField(
+                    value = phoneInput,
+                    onValueChange = { phoneInput = it.filter { c -> c.isDigit() || c == '+' } },
+                    label = { Text("No. WhatsApp pelanggan") },
+                    placeholder = { Text("mis. 628123456789") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Normalisasi kasar: buang "0" di depan -> ganti "62" (kode negara ID),
+                        // dan buang karakter "+" (wa.me tidak pakai tanda plus di path-nya).
+                        val normalized = phoneInput.trim().removePrefix("+").let {
+                            if (it.startsWith("0")) "62" + it.removePrefix("0") else it
+                        }
+                        val text = java.net.URLEncoder.encode(
+                            buildWhatsappReceiptText(transaction, items, storeProfile), "UTF-8"
+                        )
+                        autoLockManager.expectExternalActivityReturn()
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://wa.me/$normalized?text=$text")
+                            )
+                        )
+                        showWhatsappInput = false
+                    },
+                    enabled = phoneInput.trim().length >= 8
+                ) { Text("Kirim") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWhatsappInput = false }) { Text("Batal") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -480,6 +595,9 @@ private fun CartSummary(cart: Cart) {
         HorizontalDivider()
         SummaryRow("Subtotal", rupiah.format(cart.subtotal))
         SummaryRow("Diskon", "- " + rupiah.format(cart.transactionDiscount))
+        if (cart.loyaltyDiscount > 0) {
+            SummaryRow("Poin Loyalitas (${cart.loyaltyPointsRedeemed} poin)", "- " + rupiah.format(cart.loyaltyDiscount))
+        }
         if (cart.taxPercent > 0.0) {
             SummaryRow("Pajak (${formatPercent(cart.taxPercent)}%)", rupiah.format(cart.taxAmount))
         }
@@ -520,7 +638,11 @@ private fun PaymentModal(
     qrisRawContent: String?,
     quickCashAmounts: List<Long> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
+    loyaltyEnabled: Boolean = false,
+    loyaltyPointValueRupiah: Long = 100,
     isProcessing: Boolean,
+    onApplyLoyaltyRedemption: (CustomerEntity, Long) -> Unit = { _, _ -> },
+    onClearLoyaltyRedemption: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>, customerId: Long?) -> Unit
 ) {
@@ -529,6 +651,21 @@ private fun PaymentModal(
     var amountText by remember { mutableStateOf("") }
     var selectedCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
     var showCustomerPicker by remember { mutableStateOf(false) }
+    var loyaltyPointsInput by remember { mutableStateOf("") }
+
+    // BUG PENTING: `selectedCustomer` di atas ada di state LOKAL dialog ini — reset ke null
+    // setiap dialog ditutup lalu dibuka lagi. Tapi cart.loyaltyPointsRedeemed/loyaltyDiscount
+    // ada di ViewModel (Cart), jadi BERTAHAN lintas sesi dialog. Tanpa reset ini, kasir bisa
+    // menerapkan penukaran poin untuk pelanggan A, menutup dialog TANPA checkout, membuka lagi,
+    // lalu checkout tanpa memilih pelanggan sama sekali (customerId = null) — potongan Rupiah
+    // tetap dipakai di nota tapi TIDAK ADA poin yang benar-benar terpotong dari siapa pun
+    // (kebocoran diskon), atau dipotong dari pelanggan yang salah kalau pelanggan lain dipilih.
+    // Setiap dialog pembayaran dibuka segar, redemption WAJIB diterapkan ulang secara sengaja.
+    LaunchedEffect(Unit) {
+        if (cart.loyaltyPointsRedeemed > 0) {
+            onClearLoyaltyRedemption()
+        }
+    }
 
     val paidSoFar = payments.sumOf { it.amount }
     val remaining = (cart.total - paidSoFar).coerceAtLeast(0.0)
@@ -540,8 +677,69 @@ private fun PaymentModal(
         Column(Modifier.padding(16.dp).fillMaxWidth()) {
             Text("Pembayaran", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
+            if (cart.loyaltyDiscount > 0) {
+                Text(
+                    "Subtotal: ${rupiah.format(cart.subtotal)}  ·  Potongan poin: -${rupiah.format(cart.loyaltyDiscount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             Text("Total belanja: ${rupiah.format(cart.total)}", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
+
+            if (loyaltyEnabled) {
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { showCustomerPicker = true },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Redeem, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                selectedCustomer?.let { "${it.name} · Saldo ${it.loyaltyPoints} poin" }
+                                    ?: "Pilih pelanggan untuk pakai/kumpulkan poin (opsional)",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        selectedCustomer?.let { customer ->
+                            if (customer.loyaltyPoints > 0) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = loyaltyPointsInput,
+                                        onValueChange = { loyaltyPointsInput = it.filter { c -> c.isDigit() } },
+                                        label = { Text("Tukar poin (maks ${customer.loyaltyPoints})") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(onClick = {
+                                        onApplyLoyaltyRedemption(customer, loyaltyPointsInput.toLongOrNull() ?: 0L)
+                                    }) { Text("Pakai") }
+                                }
+                                if (cart.loyaltyPointsRedeemed > 0) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "${cart.loyaltyPointsRedeemed} poin dipakai (-${rupiah.format(cart.loyaltyDiscount)})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(onClick = {
+                                            loyaltyPointsInput = ""
+                                            onClearLoyaltyRedemption()
+                                        }) { Text("Batalkan") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
 
             if (payments.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth()) {
@@ -751,6 +949,14 @@ private fun PaymentModal(
             customers = customers,
             onDismiss = { showCustomerPicker = false },
             onSelect = { customer ->
+                // BUG: jika kasir sudah menerapkan penukaran poin untuk pelanggan A lalu
+                // ganti ke pelanggan B (tanpa "Batalkan" dulu), cart.loyaltyPointsRedeemed
+                // tetap berisi angka milik A tapi customerId yang dikirim ke checkout jadi B —
+                // poin akan salah dipotong dari saldo B. Reset penukaran setiap ganti pelanggan.
+                if (selectedCustomer?.id != customer.id && cart.loyaltyPointsRedeemed > 0) {
+                    onClearLoyaltyRedemption()
+                    loyaltyPointsInput = ""
+                }
                 selectedCustomer = customer
                 showCustomerPicker = false
             }

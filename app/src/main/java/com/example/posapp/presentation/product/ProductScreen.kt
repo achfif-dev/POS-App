@@ -136,6 +136,7 @@ fun ProductScreen(
                                     name = product.name,
                                     sku = product.sku,
                                     categoryId = product.categoryId,
+                                    supplierId = product.supplierId,
                                     purchasePrice = product.purchasePrice.toString(),
                                     sellPrice = product.sellPrice.toString(),
                                     stock = product.stock.toString(),
@@ -160,6 +161,7 @@ fun ProductScreen(
         ProductFormDialog(
             form = form,
             categories = uiState.categories,
+            suppliers = uiState.suppliers,
             isSaving = uiState.isSaving,
             onDismiss = { formState = null },
             onSave = { viewModel.saveProduct(it) }
@@ -255,12 +257,14 @@ private fun ProductRow(
 private fun ProductFormDialog(
     form: ProductFormState,
     categories: List<CategoryEntity>,
+    suppliers: List<com.example.posapp.data.local.entity.SupplierEntity> = emptyList(),
     isSaving: Boolean,
     onDismiss: () -> Unit,
     onSave: (ProductFormState) -> Unit
 ) {
     var state by remember(form.productId) { mutableStateOf(form) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var supplierMenuExpanded by remember { mutableStateOf(false) }
     var unitMenuExpanded by remember { mutableStateOf(false) }
     var isCustomUnit by remember(form.productId) {
         mutableStateOf(com.example.posapp.data.local.entity.ProductUnits.isCustom(form.unit))
@@ -268,6 +272,7 @@ private fun ProductFormDialog(
     var showScanner by remember { mutableStateOf(false) }
     var showPhotoSourceSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
 
     // File tujuan sementara untuk hasil jepretan kamera — dibuat sebelum kamera dibuka,
     // lalu Uri-nya (via FileProvider) diberikan ke aplikasi Kamera untuk ditulisi langsung.
@@ -300,6 +305,7 @@ private fun ProductFormDialog(
         val destFile = newPhotoDestination()
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
         pendingCameraFile = destFile
+        autoLockManager.expectExternalActivityReturn()
         cameraCaptureLauncher.launch(uri)
     }
 
@@ -414,6 +420,40 @@ private fun ProductFormDialog(
                             DropdownMenuItem(
                                 text = { Text(category.name) },
                                 onClick = { state = state.copy(categoryId = category.id); categoryMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Pemasok (v13) — opsional, dipakai untuk mengelompokkan produk saat membuat
+                // draf Pesanan Pembelian dari daftar stok tipis (lihat StockScreen). Dropdown
+                // hanya berguna kalau ada minimal satu pemasok terdaftar (dikelola dari
+                // Pengaturan > Pemasok); kalau kosong, ditampilkan tapi cuma berisi "Tanpa pemasok".
+                ExposedDropdownMenuBox(
+                    expanded = supplierMenuExpanded,
+                    onExpandedChange = { supplierMenuExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = suppliers.find { it.id == state.supplierId }?.name ?: "Tanpa pemasok",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Pemasok") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = supplierMenuExpanded,
+                        onDismissRequest = { supplierMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Tanpa pemasok") },
+                            onClick = { state = state.copy(supplierId = null); supplierMenuExpanded = false }
+                        )
+                        suppliers.forEach { supplier ->
+                            DropdownMenuItem(
+                                text = { Text(supplier.name) },
+                                onClick = { state = state.copy(supplierId = supplier.id); supplierMenuExpanded = false }
                             )
                         }
                     }
@@ -605,6 +645,7 @@ private fun ProductFormDialog(
                         description = "Gunakan foto yang sudah ada",
                         onClick = {
                             showPhotoSourceSheet = false
+                            autoLockManager.expectExternalActivityReturn()
                             photoPickerLauncher.launch("image/*")
                         }
                     )

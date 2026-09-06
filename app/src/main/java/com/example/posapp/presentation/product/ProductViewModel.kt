@@ -32,7 +32,8 @@ data class ProductFormState(
     val discountPercent: String = "0",
     val variantName: String = "",
     val hasVariants: Boolean = false,
-    val photoPath: String? = null
+    val photoPath: String? = null,
+    val supplierId: Long? = null
 ) {
     val isValid: Boolean
         get() = name.isNotBlank() && sku.isNotBlank() &&
@@ -44,6 +45,7 @@ data class ProductFormState(
 data class ProductUiState(
     val products: List<ProductEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
+    val suppliers: List<com.example.posapp.data.local.entity.SupplierEntity> = emptyList(),
     val searchQuery: String = "",
     val isSaving: Boolean = false
 )
@@ -56,7 +58,8 @@ sealed class ProductEvent {
 @HiltViewModel
 class ProductViewModel @Inject constructor(
     private val productRepository: ProductRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val supplierRepository: com.example.posapp.data.repository.SupplierRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -66,14 +69,15 @@ class ProductViewModel @Inject constructor(
 
     private val productsFlow = productRepository.observeAll()
     private val categoriesFlow = categoryRepository.observeAll()
+    private val suppliersFlow = supplierRepository.observeAll()
 
     val uiState: StateFlow<ProductUiState> = combine(
-        productsFlow, categoriesFlow, _searchQuery, _isSaving
-    ) { products, categories, query, saving ->
+        productsFlow, categoriesFlow, suppliersFlow, _searchQuery, _isSaving
+    ) { products, categories, suppliers, query, saving ->
         val filtered = if (query.isBlank()) products else products.filter {
             it.name.contains(query, ignoreCase = true) || it.sku.contains(query, ignoreCase = true)
         }
-        ProductUiState(products = filtered, categories = categories, searchQuery = query, isSaving = saving)
+        ProductUiState(products = filtered, categories = categories, suppliers = suppliers, searchQuery = query, isSaving = saving)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductUiState())
 
     fun onSearchQueryChange(query: String) {
@@ -94,6 +98,7 @@ class ProductViewModel @Inject constructor(
                     name = form.name.trim(),
                     sku = form.sku.trim(),
                     categoryId = form.categoryId,
+                    supplierId = form.supplierId,
                     purchasePrice = form.purchasePrice.toDouble(),
                     sellPrice = form.sellPrice.toDouble(),
                     stock = if (form.hasVariants) 0 else (form.stock.toIntOrNull() ?: 0),

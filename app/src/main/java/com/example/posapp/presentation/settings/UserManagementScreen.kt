@@ -1,8 +1,10 @@
 package com.example.posapp.presentation.settings
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -127,7 +129,11 @@ fun UserManagementScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(user.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    if (user.role == UserRole.ADMIN) "Admin" else "Kasir",
+                                    when (user.role) {
+                                        UserRole.ADMIN -> "Admin"
+                                        UserRole.MANAGER -> "Manager"
+                                        UserRole.KASIR -> "Kasir"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -195,8 +201,12 @@ private fun AddUserDialog(
                     singleLine = true
                 )
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
                     FilterChip(selected = role == UserRole.KASIR, onClick = { role = UserRole.KASIR }, label = { Text("Kasir") })
+                    FilterChip(selected = role == UserRole.MANAGER, onClick = { role = UserRole.MANAGER }, label = { Text("Manager") })
                     FilterChip(selected = role == UserRole.ADMIN, onClick = { role = UserRole.ADMIN }, label = { Text("Admin") })
                 }
                 Spacer(Modifier.height(16.dp))

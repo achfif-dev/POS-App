@@ -12,9 +12,17 @@ import com.example.posapp.data.local.entity.UserRole
  * diizinkan. Kalau aktif, hanya user dengan role ADMIN yang boleh mengakses rute-rute ini.
  */
 object Permission {
-    fun canAccessExpenses(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
-        isAdminOrPinDisabled(user, pinLoginEnabled)
+    // Beban Usaha (Expenses) boleh diakses ADMIN & MANAGER — mencatat pengeluaran operasional
+    // toko adalah tugas level pengawasan, bukan cuma pemilik, dan tidak mengubah harga/data
+    // transaksi. Tetap tertutup untuk KASIR biasa.
+    fun canAccessExpenses(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
+        if (!pinLoginEnabled) return true
+        return user?.role == UserRole.ADMIN || user?.role == UserRole.MANAGER
+    }
 
+    // Pengaturan (Profil Toko/pajak, Manajemen Pengguna & PIN, Backup, Cloud Sync, Multi-Outlet)
+    // TETAP murni ADMIN-only — MANAGER sengaja TIDAK diberi akses ke sini, sesuai batasan
+    // perannya: "bisa lihat laporan & catat pengeluaran, tapi tidak bisa ubah data sensitif".
     fun canAccessSettings(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
         isAdminOrPinDisabled(user, pinLoginEnabled)
 

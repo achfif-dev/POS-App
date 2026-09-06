@@ -60,6 +60,7 @@ fun StoreProfileScreen(
     onBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     val profile by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -92,6 +93,8 @@ fun StoreProfileScreen(
 
     var customHexInput by remember(profile.appColorHex) { mutableStateOf(profile.appColorHex ?: "") }
     var taxPercentInput by remember(profile.taxPercent) { mutableStateOf(formatTaxPercent(profile.taxPercent)) }
+    var loyaltyRupiahPerPointInput by remember(profile.loyaltyRupiahPerPoint) { mutableStateOf(profile.loyaltyRupiahPerPoint.toString()) }
+    var loyaltyPointValueInput by remember(profile.loyaltyPointValueRupiah) { mutableStateOf(profile.loyaltyPointValueRupiah.toString()) }
     var newQuickCashInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -204,6 +207,109 @@ fun StoreProfileScreen(
             }
 
             Spacer(Modifier.height(28.dp))
+            Text("Tipe Bisnis & Fitur", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Sesuaikan fitur yang tampil dengan jenis usaha toko — nonaktifkan yang tidak relevan supaya tampilan tetap ringkas",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Tipe Bisnis", fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("GENERAL" to "Umum", "RETAIL" to "Retail/Toko", "FNB" to "Resto/Kafe").forEach { (value, label) ->
+                            FilterChip(
+                                selected = profile.businessType == value,
+                                onClick = { viewModel.setBusinessType(value) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+
+                    FeatureToggleRow(
+                        title = "Tag Nomor Meja/Pesanan",
+                        description = "Tambah kolom nomor meja atau nama pemesan di layar Kasir (mode Resto/Kafe)",
+                        checked = profile.tableTaggingEnabled,
+                        onCheckedChange = viewModel::setTableTaggingEnabled
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                    FeatureToggleRow(
+                        title = "Struk Digital via WhatsApp",
+                        description = "Tampilkan tombol kirim struk ke WhatsApp pelanggan setelah transaksi",
+                        checked = profile.whatsappReceiptEnabled,
+                        onCheckedChange = viewModel::setWhatsappReceiptEnabled
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                    FeatureToggleRow(
+                        title = "Pemasok & Pesanan Pembelian",
+                        description = "Aktifkan modul Pemasok dan draf PO dari daftar stok tipis",
+                        checked = profile.supplierPoEnabled,
+                        onCheckedChange = viewModel::setSupplierPoEnabled
+                    )
+
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Poin Loyalitas Pelanggan", fontWeight = FontWeight.Medium)
+                            Text(
+                                if (profile.loyaltyEnabled)
+                                    "Tiap Rp${profile.loyaltyRupiahPerPoint} belanja = 1 poin, ditukar seharga Rp${profile.loyaltyPointValueRupiah}/poin"
+                                else "Nonaktif — pelanggan tidak mengumpulkan poin",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = profile.loyaltyEnabled,
+                            onCheckedChange = { checked ->
+                                viewModel.setLoyaltySettings(checked, profile.loyaltyRupiahPerPoint, profile.loyaltyPointValueRupiah)
+                            }
+                        )
+                    }
+                    if (profile.loyaltyEnabled) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = loyaltyRupiahPerPointInput,
+                                onValueChange = { loyaltyRupiahPerPointInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Rp per 1 poin") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedTextField(
+                                value = loyaltyPointValueInput,
+                                onValueChange = { loyaltyPointValueInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Nilai 1 poin (Rp)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                viewModel.setLoyaltySettings(
+                                    true,
+                                    loyaltyRupiahPerPointInput.toLongOrNull() ?: profile.loyaltyRupiahPerPoint,
+                                    loyaltyPointValueInput.toLongOrNull() ?: profile.loyaltyPointValueRupiah
+                                )
+                            },
+                            enabled = loyaltyRupiahPerPointInput.toLongOrNull() != null && loyaltyPointValueInput.toLongOrNull() != null
+                        ) { Text("Simpan Pengaturan Poin") }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
             Text("Nominal Cepat Cash", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
@@ -300,7 +406,7 @@ fun StoreProfileScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { qrisPickerLauncher.launch("image/*") }) {
+                            OutlinedButton(onClick = { autoLockManager.expectExternalActivityReturn(); qrisPickerLauncher.launch("image/*") }) {
                                 Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Ganti Gambar")
@@ -321,7 +427,7 @@ fun StoreProfileScreen(
                         Spacer(Modifier.height(8.dp))
                         Text("Belum ada gambar QRIS", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(12.dp))
-                        Button(onClick = { qrisPickerLauncher.launch("image/*") }) {
+                        Button(onClick = { autoLockManager.expectExternalActivityReturn(); qrisPickerLauncher.launch("image/*") }) {
                             Text("Upload Gambar QRIS")
                         }
                     }
@@ -349,7 +455,7 @@ fun StoreProfileScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { logoPickerLauncher.launch("image/*") }) {
+                            OutlinedButton(onClick = { autoLockManager.expectExternalActivityReturn(); logoPickerLauncher.launch("image/*") }) {
                                 Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Ganti Logo")
@@ -370,7 +476,7 @@ fun StoreProfileScreen(
                         Spacer(Modifier.height(8.dp))
                         Text("Belum ada logo toko", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(12.dp))
-                        Button(onClick = { logoPickerLauncher.launch("image/*") }) {
+                        Button(onClick = { autoLockManager.expectExternalActivityReturn(); logoPickerLauncher.launch("image/*") }) {
                             Text("Upload Logo Toko")
                         }
                     }
@@ -580,5 +686,25 @@ fun StoreProfileScreen(
                 }
             }
         }
+    }
+}
+
+/** Baris toggle fitur generik dipakai untuk semua switch di seksi "Tipe Bisnis & Fitur". */
+@Composable
+private fun FeatureToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

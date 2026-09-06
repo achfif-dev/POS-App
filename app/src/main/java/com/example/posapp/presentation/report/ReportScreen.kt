@@ -49,6 +49,7 @@ fun ReportScreen(
     var showVoidConfirm by remember { mutableStateOf(false) }
     var showReturnDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
 
     val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -70,6 +71,7 @@ fun ReportScreen(
             when (event) {
                 is ReportEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
                 is ReportEvent.PdfReady -> {
+                    autoLockManager.expectExternalActivityReturn()
                     context.startActivity(
                         Intent.createChooser(viewModel.createShareIntent(event.file), "Bagikan Invoice PDF")
                     )
@@ -129,14 +131,14 @@ fun ReportScreen(
                     accent = MaterialTheme.colorScheme.secondary
                 )
 
-                if (uiState.isAdmin) {
+                if (uiState.canViewExpenses) {
                     Spacer(Modifier.height(16.dp))
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     Icons.Default.Lock,
-                                    contentDescription = "Khusus Admin",
+                                    contentDescription = "Khusus Admin & Manager",
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -145,7 +147,7 @@ fun ReportScreen(
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Hanya terlihat oleh Admin — tidak ditampilkan ke Kasir",
+                                "Hanya terlihat oleh Admin & Manager — tidak ditampilkan ke Kasir",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

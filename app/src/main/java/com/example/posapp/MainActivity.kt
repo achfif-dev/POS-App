@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.posapp.data.auth.AutoLockManager
+import com.example.posapp.data.auth.LocalAutoLockManager
 import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.domain.auth.Permission
 import com.example.posapp.presentation.auth.AuthGateViewModel
@@ -34,6 +36,7 @@ import com.example.posapp.presentation.pos.PosScreen
 import com.example.posapp.presentation.product.ProductScreen
 import com.example.posapp.presentation.report.ReportScreen
 import com.example.posapp.presentation.scanner.BarcodeScannerScreen
+import com.example.posapp.presentation.settings.AuditLogScreen
 import com.example.posapp.presentation.settings.SettingsScreen
 import com.example.posapp.presentation.settings.StoreProfileScreen
 import com.example.posapp.presentation.settings.StoreProfileViewModel
@@ -62,8 +65,10 @@ class MainActivity : ComponentActivity() {
             val storeViewModel: StoreProfileViewModel = hiltViewModel()
             val storeProfile by storeViewModel.uiState.collectAsState()
             PosAppTheme(customPrimaryHex = storeProfile.appColorHex, fontChoice = storeProfile.fontChoice) {
-                Surface(modifier = Modifier) {
-                    PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                CompositionLocalProvider(LocalAutoLockManager provides autoLockManager) {
+                    Surface(modifier = Modifier) {
+                        PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                    }
                 }
             }
         }
@@ -244,7 +249,9 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                     onOpenUserManagement = { navController.navigate("user_management") },
                     onOpenExpenses = { navController.navigate("expenses") },
                     onOpenCloudSync = { navController.navigate("cloud_sync") },
-                    onOpenMultiOutlet = { navController.navigate("multi_outlet") }
+                    onOpenMultiOutlet = { navController.navigate("multi_outlet") },
+                    onOpenAuditLog = { navController.navigate("audit_log") },
+                    onOpenSuppliers = { navController.navigate("suppliers") }
                 )
             }
         }
@@ -269,6 +276,15 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                 UserManagementScreen(onBack = { navController.popBackStack() })
             }
         }
+        composable("suppliers") {
+            // Kelola Pemasok (v13) — admin-only sama seperti rute Pengaturan lain, digerbang
+            // independen (bukan cuma tersembunyi di UI SettingsScreen).
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                com.example.posapp.presentation.settings.SupplierScreen(onBack = { navController.popBackStack() })
+            }
+        }
         composable("cloud_sync") {
             // Sinkronisasi Cloud (Fase 4) mengubah pengaturan tingkat toko/cabang -> admin-only,
             // sama seperti rute Pengaturan lain.
@@ -284,6 +300,15 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
                 MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("audit_log") {
+            // Log Aktivitas berisi jejak Void/Retur/Koreksi transaksi & manajemen Pengguna ->
+            // sama sensitifnya dengan rute Pengaturan lain, admin-only.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                AuditLogScreen(onBack = { navController.popBackStack() })
             }
         }
     }

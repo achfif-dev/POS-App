@@ -2,8 +2,10 @@ package com.example.posapp.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.data.local.entity.UserEntity
 import com.example.posapp.data.local.entity.UserRole
+import com.example.posapp.data.repository.AuditLogRepository
 import com.example.posapp.data.repository.UserRepository
 import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +31,9 @@ sealed class UserManagementEvent {
 @HiltViewModel
 class UserManagementViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val storeProfileRepository: StoreProfileRepository
+    private val storeProfileRepository: StoreProfileRepository,
+    private val sessionManager: SessionManager,
+    private val auditLogRepository: AuditLogRepository
 ) : ViewModel() {
 
     private val _events = MutableSharedFlow<UserManagementEvent>()
@@ -68,6 +72,12 @@ class UserManagementViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 userRepository.createUser(name, pin, role)
+                auditLogRepository.log(
+                    actorName = sessionManager.currentUser.value?.name ?: "Admin",
+                    actorRole = sessionManager.currentUser.value?.role,
+                    action = "TAMBAH_USER",
+                    description = "Menambahkan pengguna \"$name\" dengan role ${role.name}"
+                )
                 _events.emit(UserManagementEvent.ShowMessage("Pengguna \"$name\" ditambahkan"))
             } catch (e: Exception) {
                 _events.emit(UserManagementEvent.ShowMessage("Gagal menambah pengguna: nama mungkin sudah dipakai"))
@@ -78,6 +88,12 @@ class UserManagementViewModel @Inject constructor(
     fun deleteUser(user: UserEntity) {
         viewModelScope.launch {
             userRepository.deleteUser(user.id)
+            auditLogRepository.log(
+                actorName = sessionManager.currentUser.value?.name ?: "Admin",
+                actorRole = sessionManager.currentUser.value?.role,
+                action = "HAPUS_USER",
+                description = "Menghapus pengguna \"${user.name}\" (role ${user.role.name})"
+            )
             _events.emit(UserManagementEvent.ShowMessage("${user.name} dihapus"))
         }
     }

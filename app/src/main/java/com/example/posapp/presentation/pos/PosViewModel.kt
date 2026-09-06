@@ -267,6 +267,37 @@ class PosViewModel @Inject constructor(
         _cart.value = _cart.value.copy(transactionDiscount = discount)
     }
 
+    /**
+     * Terapkan penukaran poin loyalitas (v13) sebagai potongan tambahan di kasir. [points]
+     * otomatis dibatasi supaya tidak melebihi saldo poin pelanggan maupun subtotal belanja
+     * (setelah dikurangi diskon manual) — tidak mungkin menghasilkan potongan negatif atau
+     * "hutang poin". Kirim points = 0 untuk membatalkan penukaran.
+     */
+    fun applyLoyaltyRedemption(customer: CustomerEntity, points: Long) {
+        val profile = uiState.value.storeProfile
+        val current = _cart.value
+        val maxDiscountable = (current.subtotal - current.transactionDiscount).coerceAtLeast(0.0)
+        val maxPointsBySpend = if (profile.loyaltyPointValueRupiah > 0) {
+            (maxDiscountable / profile.loyaltyPointValueRupiah).toLong()
+        } else 0L
+        val clampedPoints = points.coerceIn(0L, minOf(customer.loyaltyPoints, maxPointsBySpend))
+        _cart.value = current.copy(
+            loyaltyPointsRedeemed = clampedPoints,
+            loyaltyDiscount = clampedPoints * profile.loyaltyPointValueRupiah
+        )
+    }
+
+    /** Batalkan penukaran poin yang sedang diterapkan (mis. pelanggan diganti/dibatalkan). */
+    fun clearLoyaltyRedemption() {
+        _cart.value = _cart.value.copy(loyaltyPointsRedeemed = 0, loyaltyDiscount = 0.0)
+    }
+
+    /** Set nomor meja/nama pemesan (v13, mode Resto/Kafe) — disimpan ke TransactionEntity.note
+     * saat checkout. Kirim null/kosong untuk mengosongkan. */
+    fun updateTableTag(tag: String?) {
+        _cart.value = _cart.value.copy(tableTag = tag?.trim()?.takeIf { it.isNotBlank() })
+    }
+
     fun updateTaxPercent(percent: Double) {
         _cart.value = _cart.value.copy(taxPercent = percent)
     }
@@ -279,7 +310,7 @@ class PosViewModel @Inject constructor(
         viewModelScope.launch {
             _isProcessing.value = true
             val cashierName = sessionManager.currentUser.value?.name
-            when (val result = checkoutUseCase(_cart.value, payments, cashierName = cashierName, customerId = customerId)) {
+            when (val result = checkoutUseCase(_cart.value, payments, note = _cart.value.tableTag, cashierName = cashierName, customerId = customerId)) {
                 is CheckoutResult.Success -> {
                     _lastReceipt.value = transactionRepository.getTransactionWithItems(result.transactionId)
                     _events.emit(PosEvent.CheckoutSuccess(result.transactionId, result.invoiceNumber, result.change))

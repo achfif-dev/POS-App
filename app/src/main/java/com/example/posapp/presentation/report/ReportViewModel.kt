@@ -44,7 +44,8 @@ data class ReportUiState(
     val netProfit: Double = 0.0, // Laba Bersih = Laba Kotor - Total Beban Usaha — ringkasan khusus Admin
     val topItems: List<TopSellingItem> = emptyList(),
     val transactions: List<TransactionEntity> = emptyList(), // riwayat penjualan periode terpilih
-    val isAdmin: Boolean = false, // hanya Admin/Manajer yang boleh mengoreksi riwayat penjualan
+    val isAdmin: Boolean = false, // HANYA Admin: boleh koreksi harga/qty transaksi & Void — Manager tetap TIDAK termasuk ini
+    val canViewExpenses: Boolean = false, // Admin & Manager: boleh lihat Laba Bersih & kelola Beban Usaha
     val isLoading: Boolean = false
 )
 
@@ -73,7 +74,8 @@ class ReportViewModel @Inject constructor(
     private val printerRepository: PrinterRepository,
     private val pdfInvoiceGenerator: PdfInvoiceGenerator,
     private val fileShareHelper: FileShareHelper,
-    private val storeProfileRepository: StoreProfileRepository
+    private val storeProfileRepository: StoreProfileRepository,
+    private val auditLogRepository: com.example.posapp.data.repository.AuditLogRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReportUiState())
@@ -89,7 +91,8 @@ class ReportViewModel @Inject constructor(
         // Sama seperti guard peran di Pengaturan: user null (login PIN tidak wajib) dianggap Admin.
         val currentUser = sessionManager.currentUser.value
         val isAdmin = currentUser == null || currentUser.role == UserRole.ADMIN
-        _uiState.value = _uiState.value.copy(isAdmin = isAdmin)
+        val canViewExpenses = isAdmin || currentUser?.role == UserRole.MANAGER
+        _uiState.value = _uiState.value.copy(isAdmin = isAdmin, canViewExpenses = canViewExpenses)
         load()
     }
 
@@ -128,10 +131,8 @@ class ReportViewModel @Inject constructor(
             val summary = transactionRepository.getSalesSummary(state.startMillis, state.endMillis)
             val topItems = transactionRepository.getTopSellingItems(state.startMillis, state.endMillis)
             val transactions = transactionRepository.observeRange(state.startMillis, state.endMillis).first()
-            // Laba Bersih hanya berguna & sensitif untuk Admin (menyingkap struktur biaya toko),
-            // jadi hitungan Beban Usaha hanya dijalankan bila user saat ini Admin — Kasir tidak
-            // pernah melihat maupun memicu perhitungan ini.
-            val totalExpenses = if (state.isAdmin) {
+            // Laba Bersih menyingkap struktur biaya toko — hanya dihitung untuk Admin & Manager.
+            val totalExpenses = if (state.canViewExpenses) {
                 expenseRepository.getTotalForRange(state.startMillis, state.endMillis)
             } else 0.0
             _uiState.value = _uiState.value.copy(
@@ -188,6 +189,13 @@ class ReportViewModel @Inject constructor(
                 deletedItemIds = deletedItemIds,
                 editedByName = editorName
             )
+            auditLogRepository.log(
+                actorName = editorName,
+                actorRole = sessionManager.currentUser.value?.role,
+                action = "KOREKSI_TRANSAKSI",
+                description = "Mengoreksi transaksi ${updatedTransaction.invoiceNumber} " +
+                    "(${current.items.size} item asli -> ${updatedItems.size} item, ${deletedItemIds.size} item dihapus)"
+            )
             _detailState.value = null
             _events.emit(ReportEvent.ShowMessage("Riwayat penjualan berhasil dikoreksi"))
             load()
@@ -202,11 +210,18 @@ class ReportViewModel @Inject constructor(
      * sama seperti tombol "Hapus Transaksi" yang lama).
      */
     fun voidTransaction(transactionId: Long, reason: String) {
+        val invoiceNumber = _detailState.value?.transaction?.invoiceNumber ?: "#$transactionId"
         viewModelScope.launch {
             _detailState.value = _detailState.value?.copy(isSaving = true)
             val byName = sessionManager.currentUser.value?.name ?: "Admin"
             try {
                 transactionRepository.voidTransaction(transactionId, reason, byName)
+                auditLogRepository.log(
+                    actorName = byName,
+                    actorRole = sessionManager.currentUser.value?.role,
+                    action = "VOID_TRANSAKSI",
+                    description = "Membatalkan (void) transaksi $invoiceNumber — alasan: \"$reason\""
+                )
                 _detailState.value = null
                 _events.emit(ReportEvent.ShowMessage("Transaksi berhasil dibatalkan (void)"))
                 load()
@@ -229,6 +244,7 @@ class ReportViewModel @Inject constructor(
         refundMethod: PaymentMethod?
     ) {
         val transactionId = _detailState.value?.transaction?.id ?: return
+        val invoiceNumber = _detailState.value?.transaction?.invoiceNumber ?: "#$transactionId"
         viewModelScope.launch {
             _detailState.value = _detailState.value?.copy(isSaving = true)
             val processedByName = sessionManager.currentUser.value?.name ?: "Kasir"
@@ -240,6 +256,13 @@ class ReportViewModel @Inject constructor(
                     refundAmount = refundAmount,
                     refundMethod = refundMethod,
                     processedByName = processedByName
+                )
+                auditLogRepository.log(
+                    actorName = processedByName,
+                    actorRole = sessionManager.currentUser.value?.role,
+                    action = "RETUR_BARANG",
+                    description = "Memproses retur ${items.size} item transaksi $invoiceNumber, " +
+                        "refund ${refundAmount.toInt()} (${refundMethod?.name ?: "-"}) — alasan: \"$reason\""
                 )
                 _detailState.value = null
                 _events.emit(ReportEvent.ShowMessage("Retur berhasil diproses"))

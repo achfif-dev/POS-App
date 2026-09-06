@@ -3,8 +3,10 @@ package com.example.posapp.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import com.example.posapp.data.auth.SessionManager
 import com.example.posapp.data.backup.BackupRepository
 import com.example.posapp.data.backup.BackupResult
+import com.example.posapp.data.backup.RestoreAuditLog
 import com.example.posapp.data.export.ExcelExporter
 import com.example.posapp.data.export.FileShareHelper
 import com.example.posapp.data.repository.ProductRepository
@@ -33,7 +35,9 @@ class SettingsViewModel @Inject constructor(
     private val excelExporter: ExcelExporter,
     private val productRepository: ProductRepository,
     private val transactionRepository: TransactionRepository,
-    private val fileShareHelper: FileShareHelper
+    private val fileShareHelper: FileShareHelper,
+    private val sessionManager: SessionManager,
+    private val restoreAuditLog: RestoreAuditLog
 ) : ViewModel() {
 
     private val _events = MutableSharedFlow<SettingsEvent>()
@@ -64,6 +68,14 @@ class SettingsViewModel @Inject constructor(
 
     fun restoreFrom(file: File, password: String) {
         viewModelScope.launch {
+            // Dicatat SEBELUM restore, ke FILE TEKS terpisah (bukan tabel audit_logs Room) —
+            // lihat dokumentasi RestoreAuditLog untuk alasannya: restore menimpa seluruh file
+            // database, jadi log yang ditulis ke Room (sebelum ATAU sesudah) akan ikut hilang.
+            restoreAuditLog.append(
+                actorName = sessionManager.currentUser.value?.name ?: "Admin",
+                actorRole = sessionManager.currentUser.value?.role?.name ?: "-",
+                sourceFileName = file.name
+            )
             when (val result = withContext(Dispatchers.IO) { backupRepository.restore(file, password) }) {
                 is BackupResult.Success -> _events.emit(
                     SettingsEvent.ShowMessage("Restore berhasil. Silakan tutup dan buka ulang aplikasi.")

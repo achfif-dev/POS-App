@@ -157,4 +157,34 @@ class StoreProfileViewModel @Inject constructor(
             )
         }
     }
+
+    /** @param type "RETAIL", "FNB", atau "GENERAL" — lihat StoreProfile.businessType. */
+    fun setBusinessType(type: String) {
+        viewModelScope.launch {
+            storeProfileRepository.updateBusinessType(type)
+            _events.emit(StoreProfileEvent.ShowMessage("Tipe bisnis diperbarui"))
+        }
+    }
+
+    /** Aktifkan/nonaktifkan program poin loyalitas & atur nilai tukarnya. */
+    fun setLoyaltySettings(enabled: Boolean, rupiahPerPoint: Long, pointValueRupiah: Long) {
+        viewModelScope.launch {
+            storeProfileRepository.updateLoyaltySettings(enabled, rupiahPerPoint, pointValueRupiah)
+            _events.emit(
+                StoreProfileEvent.ShowMessage(if (enabled) "Poin loyalitas diaktifkan" else "Poin loyalitas dinonaktifkan")
+            )
+        }
+    }
+
+    fun setWhatsappReceiptEnabled(enabled: Boolean) {
+        viewModelScope.launch { storeProfileRepository.setWhatsappReceiptEnabled(enabled) }
+    }
+
+    fun setTableTaggingEnabled(enabled: Boolean) {
+        viewModelScope.launch { storeProfileRepository.setTableTaggingEnabled(enabled) }
+    }
+
+    fun setSupplierPoEnabled(enabled: Boolean) {
+        viewModelScope.launch { storeProfileRepository.setSupplierPoEnabled(enabled) }
+    }
 }

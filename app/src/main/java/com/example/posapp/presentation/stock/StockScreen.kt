@@ -1,10 +1,14 @@
 package com.example.posapp.presentation.stock
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,12 +39,15 @@ fun StockScreen(
     val lowStock by viewModel.lowStockProducts.collectAsState()
     val history by viewModel.adjustmentHistory.collectAsState()
     val categoryNamesById by viewModel.categoryNamesById.collectAsState()
+    val suppliers by viewModel.suppliers.collectAsState()
+    val supplierPoEnabled by viewModel.supplierPoEnabled.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var adjustingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var pickingVariantsFor by remember { mutableStateOf<ProductEntity?>(null) }
     var adjustingVariant by remember { mutableStateOf<Pair<ProductEntity, ProductVariantEntity>?>(null) }
     var showLowStockOnly by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showPoDraft by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -76,6 +83,15 @@ fun StockScreen(
                 label = { Text("Stok Tipis Saja (${lowStock.size})") }
             )
             Spacer(Modifier.height(12.dp))
+
+            if (supplierPoEnabled && lowStock.isNotEmpty()) {
+                Button(onClick = { showPoDraft = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Buat Draf Pesanan Pembelian (${lowStock.size} produk stok tipis)")
+                }
+                Spacer(Modifier.height(12.dp))
+            }
 
             if (displayedList.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -142,6 +158,14 @@ fun StockScreen(
             history = history,
             productNameById = productNameById,
             onDismiss = { showHistory = false }
+        )
+    }
+
+    if (showPoDraft) {
+        PurchaseOrderDraftSheet(
+            lowStockProducts = lowStock,
+            suppliers = suppliers,
+            onDismiss = { showPoDraft = false }
         )
     }
 }
@@ -344,5 +368,123 @@ private fun AdjustmentTypeBadge(type: String) {
     }
     Surface(shape = MaterialTheme.shapes.small, color = container) {
         Text(label, color = content, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+/**
+ * Draf Pesanan Pembelian (v13) dari daftar stok tipis, dikelompokkan per pemasok. Ini SENGAJA
+ * cuma menyusun & mengirim teks draf pesanan via WhatsApp — bukan alur "terima barang" penuh.
+ * Penerimaan barang & penambahan stok tetap lewat fitur Penyesuaian Stok yang sudah ada, supaya
+ * modul ini tetap ringan dan tidak menduplikasi alur yang sudah berjalan baik.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PurchaseOrderDraftSheet(
+    lowStockProducts: List<ProductEntity>,
+    suppliers: List<com.example.posapp.data.local.entity.SupplierEntity>,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
+    val supplierById = remember(suppliers) { suppliers.associateBy { it.id } }
+    val grouped = remember(lowStockProducts, suppliers) {
+        lowStockProducts.groupBy { it.supplierId?.let { id -> supplierById[id] } }
+    }
+    // Jumlah yang disarankan dipesan: cukup untuk kembali 2x ambang batas stok tipis di atas
+    // stok saat ini, minimal 1 — bukan angka sains, cuma titik awal yang wajar untuk diedit kasir.
+    val suggestedQty = remember(lowStockProducts) {
+        lowStockProducts.associate { it.id to ((it.lowStockThreshold * 2) - it.stock).coerceAtLeast(1) }
+    }
+    val qtyInputs = remember(lowStockProducts) {
+        mutableStateMapOf<Long, String>().apply {
+            lowStockProducts.forEach { put(it.id, (suggestedQty[it.id] ?: 1).toString()) }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(16.dp).fillMaxWidth().heightIn(max = 620.dp).verticalScroll(rememberScrollState())) {
+            Text("Draf Pesanan Pembelian", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Sesuaikan jumlah lalu kirim draf ke pemasok via WhatsApp. Stok baru bertambah lewat Penyesuaian Stok setelah barang diterima.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+
+            grouped.forEach { (supplier, productsInGroup) ->
+                Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            supplier?.name ?: "Tanpa Pemasok",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (supplier == null) {
+                            Text(
+                                "Atur pemasok di halaman Produk supaya draf pesanan bisa dikirim otomatis.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        productsInGroup.forEach { product ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(product.name, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "Stok saat ini: ${product.stock} ${product.unit}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = qtyInputs[product.id] ?: "",
+                                    onValueChange = { qtyInputs[product.id] = it.filter { c -> c.isDigit() } },
+                                    label = { Text("Qty") },
+                                    singleLine = true,
+                                    modifier = Modifier.width(90.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        val phone = supplier?.phone
+                        Button(
+                            enabled = !phone.isNullOrBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                val lines = productsInGroup.joinToString("\n") { p ->
+                                    val qty = qtyInputs[p.id]?.toIntOrNull() ?: (suggestedQty[p.id] ?: 1)
+                                    "- ${p.name}: $qty ${p.unit}"
+                                }
+                                val text = "Halo ${supplier?.name}, mohon bantu siapkan pesanan berikut:\n\n$lines\n\nTerima kasih."
+                                val normalized = phone!!.replace(Regex("[^0-9+]"), "")
+                                    .let { if (it.startsWith("0")) "62" + it.substring(1) else it }
+                                    .removePrefix("+")
+                                autoLockManager.expectExternalActivityReturn()
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW).apply {
+                                            data = android.net.Uri.parse(
+                                                "https://wa.me/$normalized?text=${android.net.Uri.encode(text)}"
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (phone.isNullOrBlank()) "Pemasok belum punya no. WhatsApp" else "Kirim ke ${supplier?.name} via WhatsApp")
+                        }
+                    }
+                }
+            }
+
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Tutup") }
+        }
     }
 }

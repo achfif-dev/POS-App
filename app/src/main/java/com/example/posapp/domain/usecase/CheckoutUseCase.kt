@@ -5,8 +5,11 @@ import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
+import com.example.posapp.data.repository.CustomerRepository
 import com.example.posapp.data.repository.TransactionRepository
+import com.example.posapp.data.settings.StoreProfileRepository
 import com.example.posapp.domain.model.Cart
+import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -27,7 +30,9 @@ data class PaymentSplit(val method: PaymentMethod, val amount: Double)
  * - Simpan transaksi + item + rincian pembayaran ke Room (mengurangi stok otomatis lewat repository)
  */
 class CheckoutUseCase @Inject constructor(
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val customerRepository: CustomerRepository,
+    private val storeProfileRepository: StoreProfileRepository
 ) {
     suspend operator fun invoke(
         cart: Cart,
@@ -77,7 +82,7 @@ class CheckoutUseCase @Inject constructor(
                 subtotal = cart.subtotal,
                 taxPercent = cart.taxPercent,
                 taxAmount = cart.taxAmount,
-                discountAmount = cart.transactionDiscount,
+                discountAmount = cart.totalDiscount, // diskon manual + penukaran poin loyalitas (v13)
                 total = cart.total,
                 paymentMethod = primaryMethod,
                 amountPaid = totalPaid,
@@ -88,6 +93,7 @@ class CheckoutUseCase @Inject constructor(
             )
             try {
                 val txId = transactionRepository.checkout(transaction, items, paymentEntities)
+                applyLoyaltyPoints(cart, customerId)
                 return CheckoutResult.Success(txId, invoiceNumber, change)
             } catch (e: SQLiteConstraintException) {
                 lastError = e // nomor invoice bentrok, ulangi dengan nomor baru
@@ -102,6 +108,28 @@ class CheckoutUseCase @Inject constructor(
         val datePart = SimpleDateFormat("yyyyMMdd-HHmmssSSS", Locale.getDefault()).format(Date())
         val randomSuffix = (100..999).random()
         return "INV-$datePart-$randomSuffix"
+    }
+
+    /**
+     * Poin loyalitas (v13): dilakukan SETELAH transaksi utama sukses tersimpan, sengaja DI LUAR
+     * withTransaction milik TransactionRepository.checkout — kegagalan di sini (mis. app
+     * crash tepat di antara dua operasi) paling buruk membuat pelanggan tidak dapat/tidak
+     * kehilangan poin sesuai jadwal, bukan merusak data transaksi/stok yang jauh lebih kritis.
+     * 1. Kurangi saldo sebesar poin yang ditukar pelanggan sebagai potongan (jika ada).
+     * 2. Tambah poin baru dari total belanja transaksi ini, HANYA jika fitur loyalitas
+     *    masih aktif saat checkout ini diproses (bisa saja dimatikan admin di tengah hari).
+     */
+    private suspend fun applyLoyaltyPoints(cart: Cart, customerId: Long?) {
+        if (customerId == null) return
+        if (cart.loyaltyPointsRedeemed > 0) {
+            customerRepository.adjustLoyaltyPoints(customerId, -cart.loyaltyPointsRedeemed)
+        }
+        val profile = storeProfileRepository.profile.first()
+        if (!profile.loyaltyEnabled || profile.loyaltyRupiahPerPoint <= 0) return
+        val earned = (cart.total / profile.loyaltyRupiahPerPoint).toLong()
+        if (earned > 0) {
+            customerRepository.adjustLoyaltyPoints(customerId, earned)
+        }
     }
 
     private companion object {

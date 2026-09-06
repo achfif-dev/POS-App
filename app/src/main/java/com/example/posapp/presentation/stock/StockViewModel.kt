@@ -25,7 +25,9 @@ sealed class StockEvent {
 @HiltViewModel
 class StockViewModel @Inject constructor(
     private val productRepository: ProductRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val supplierRepository: com.example.posapp.data.repository.SupplierRepository,
+    storeProfileRepository: com.example.posapp.data.settings.StoreProfileRepository
 ) : ViewModel() {
 
     val products: StateFlow<List<ProductEntity>> = productRepository.observeAll()
@@ -39,6 +41,14 @@ class StockViewModel @Inject constructor(
 
     val lowStockProducts: StateFlow<List<ProductEntity>> = productRepository.observeLowStock()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Pemasok aktif (v13), dipakai mengelompokkan draf Pesanan Pembelian dari stok tipis. */
+    val suppliers: StateFlow<List<com.example.posapp.data.local.entity.SupplierEntity>> = supplierRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val supplierPoEnabled: StateFlow<Boolean> = storeProfileRepository.profile
+        .map { it.supplierPoEnabled }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Riwayat penyesuaian stok gabungan (produk biasa & tiap kombinasi varian), terbaru dulu. */
     val adjustmentHistory: StateFlow<List<StockAdjustmentEntity>> = productRepository.observeAdjustmentHistory()

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Storefront
@@ -42,9 +43,12 @@ fun SettingsScreen(
     onOpenUserManagement: () -> Unit = {},
     onOpenExpenses: () -> Unit = {},
     onOpenCloudSync: () -> Unit = {},
-    onOpenMultiOutlet: () -> Unit = {}
+    onOpenMultiOutlet: () -> Unit = {},
+    onOpenAuditLog: () -> Unit = {},
+    onOpenSuppliers: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     val fileShareHelper = remember { FileShareHelper(context) }
     val snackbarHostState = remember { SnackbarHostState() }
     val backups by viewModel.backups.collectAsState()
@@ -90,8 +94,10 @@ fun SettingsScreen(
                     )
                     if (result == SnackbarResult.ActionPerformed) {
                         filePendingSave = event.file
+                        autoLockManager.expectExternalActivityReturn()
                         saveToDeviceLauncher.launch(event.file.name)
                     } else {
+                        autoLockManager.expectExternalActivityReturn()
                         context.startActivity(
                             android.content.Intent.createChooser(
                                 fileShareHelper.createShareIntent(event.file, event.mimeType),
@@ -134,8 +140,22 @@ fun SettingsScreen(
                 SettingsNavRow(
                     icon = Icons.Default.Group,
                     label = "Pengguna & Login PIN",
-                    description = "Kelola kasir/admin dan aktifkan login PIN",
+                    description = "Kelola kasir/admin/manager dan aktifkan login PIN",
                     onClick = onOpenUserManagement
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.LocalShipping,
+                    label = "Pemasok",
+                    description = "Kelola pemasok untuk draf Pesanan Pembelian dari stok tipis",
+                    onClick = onOpenSuppliers
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.Receipt,
+                    label = "Log Aktivitas",
+                    description = "Riwayat Void, Retur, koreksi transaksi, kelola pengguna & restore backup",
+                    onClick = onOpenAuditLog
                 )
             }
 
@@ -198,6 +218,7 @@ fun SettingsScreen(
                                 file = file,
                                 onRestore = { backupPendingRestore = file },
                                 onShare = {
+                                    autoLockManager.expectExternalActivityReturn()
                                     context.startActivity(
                                         android.content.Intent.createChooser(
                                             fileShareHelper.createShareIntent(file, "application/octet-stream"),
@@ -244,6 +265,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showRestorePicker = false
+                    autoLockManager.expectExternalActivityReturn()
                     restoreLauncher.launch("*/*")
                 }) { Text("Pilih File") }
             },
