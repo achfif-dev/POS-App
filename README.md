@@ -43,13 +43,19 @@ tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung
 
 ## Yang masih berupa penyempurnaan opsional (bukan blocker untuk pemakaian)
 
-- **Riwayat penyesuaian stok per varian** belum ada di layar Stok (saat ini penyesuaian stok
-  manual di layar Stok hanya untuk produk tanpa varian; stok varian diatur lewat dialog "Kelola
-  Varian" di Manajemen Produk).
-- **Role-based permission** — sudah ditegakkan penuh lewat `domain/auth/Permission.kt` (lihat
-  catatan teknis di atas), baik di navigasi maupun di setiap fungsi mutasi ViewModel.
-- **QRIS dinamis** (generate QR per transaksi) belum ada — saat ini QRIS berupa gambar statis
-  yang diunggah pemilik toko.
+- **Role-based permission** — ditegakkan lewat `domain/auth/Permission.kt`, baik di navigasi
+  (`RoleGatedRoute`) maupun (untuk rute berisiko tinggi seperti Stok Opname) di dalam fungsi
+  mutasi ViewModel. Audit 2026-09-06 menemukan rute "Produk" dan aksi Stok Opname sempat lolos
+  tanpa gerbang sama sekali — sudah diperbaiki (`Permission.canManageProducts`,
+  `Permission.canPerformStockOpname`).
+- Riwayat penyesuaian stok per varian dan QRIS dinamis (generate QR otomatis berisi nominal
+  transaksi dari QRIS statis yang diunggah pemilik toko) — **sudah diimplementasikan penuh**
+  (lihat `StockViewModel.adjustmentHistory` dan `data/qris/QrisUtil.kt` + pemakaiannya di layar
+  pembayaran Kasir); catatan lama di sini yang bilang keduanya belum ada sudah ketinggalan zaman.
+- `app/schemas/` — CI sekarang meng-upload folder ini sebagai artifact "room-schemas" tiap
+  build (lihat `android_build.yml`), tapi developer TETAP WAJIB mendownload & commit manual
+  file JSON terbaru dari tab Actions setiap kali `version` di `AppDatabase.kt` naik; ini belum
+  otomatis ter-commit sendiri.
 
 ## Alur kerja GitHub Actions (tanpa PC)
 
