@@ -1,0 +1,55 @@
+name: Deploy Functions Lisensi & Payment Gateway
+on:
+  workflow_dispatch: {}
+  push:
+    branches: ["main"]
+    paths:
+      - "functions/**"
+      - "firestore.rules"
+      - "firebase.json"
+
+# Menggantikan 'firebase deploy --only functions,firestore:rules' yang biasanya dijalankan dari
+# terminal lokal. Di sini semua dijalankan oleh runner GitHub Actions — kamu cukup klik
+# "Run workflow" dari tab Actions, tidak perlu install apa pun di komputer sendiri.
+#
+# Butuh 2 GitHub Secrets (Settings > Secrets and variables > Actions > New repository secret):
+#   FIREBASE_SERVICE_ACCOUNT_JSON — isi APA ADANYA (paste seluruh isi file .json, tanpa base64)
+#     dari file service account yang sama dengan yang dipakai di LICENSING_SETUP.md langkah 6
+#     (Firebase Console > Project Settings > Service Accounts > Generate new private key).
+#   FIREBASE_PROJECT_ID — Project ID Firebase kamu (bukan nama tampilan; lihat di Project
+#     Settings > General > Project ID).
+#
+# CATATAN: secret LICENSE_PRIVATE_KEY di Secret Manager harus SUDAH dibuat lebih dulu (lewat
+# Google Cloud Console, lihat LICENSING_SETUP_WEB.md) sebelum menjalankan workflow ini — deploy
+# akan gagal kalau function mereferensikan secret yang belum ada.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Tulis file service account
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$SA_JSON" > "${{ runner.temp }}/sa.json"
+
+      - name: Deploy ke Firebase
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        working-directory: functions
+        run: |
+          npx --yes firebase-tools@13 deploy \
+            --only functions,firestore:rules \
+            --project "$FIREBASE_PROJECT_ID" \
+            --non-interactive

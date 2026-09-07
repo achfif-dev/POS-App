@@ -1,0 +1,52 @@
+name: Generate License Keypair (jalankan SEKALI saja)
+on:
+  workflow_dispatch: {}
+
+# Workflow SEKALI PAKAI, pola yang sama dengan generate_keystore.yml yang sudah ada di repo ini:
+# membuat keypair RSA untuk sistem lisensi langsung di runner GitHub, tanpa Node/terminal lokal.
+# Hasilnya tampil di ringkasan run ini (tab Actions > run ini > Summary).
+# SETELAH kedua nilai di bawah kamu simpan (public key ke LicenseCrypto.kt, private key ke
+# Secret Manager), HAPUS run ini dari tab Actions ("..." > Delete workflow run) supaya private
+# key tidak tersisa di riwayat log.
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate keypair
+        working-directory: functions
+        # Script ini hanya memakai modul bawaan Node (crypto/fs/path), jadi tidak perlu
+        # 'npm install' sama sekali untuk langkah ini.
+        run: node scripts/generate-license-keypair.js
+
+      - name: Tulis ringkasan
+        working-directory: functions
+        run: |
+          {
+            echo "## Hasil generate keypair lisensi"
+            echo ""
+            echo "### 1) PUBLIC KEY — tempel ke LicenseCrypto.kt"
+            echo "Buka \`app/src/main/java/com/example/posapp/data/license/LicenseCrypto.kt\` di"
+            echo "GitHub web editor, ganti nilai \`LICENSE_PUBLIC_KEY_BASE64\` dengan teks ini:"
+            echo '```'
+            cat license_public_key_base64.txt
+            echo '```'
+            echo ""
+            echo "### 2) PRIVATE KEY — RAHASIA, JANGAN PERNAH COMMIT KE GIT"
+            echo "Simpan sebagai secret \`LICENSE_PRIVATE_KEY\` lewat Google Cloud Console >"
+            echo "Secret Manager (langkah web-only ada di LICENSING_SETUP_WEB.md). Isi PERSIS"
+            echo "teks ini, termasuk baris BEGIN/END:"
+            echo '```'
+            cat license_private_key.pem
+            echo '```'
+            echo ""
+            echo "**PENTING**: setelah kedua nilai di atas tersimpan, hapus run workflow ini dari"
+            echo "tab Actions supaya private key tidak nyangkut di riwayat."
+          } >> "$GITHUB_STEP_SUMMARY"

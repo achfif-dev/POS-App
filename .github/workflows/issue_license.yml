@@ -1,0 +1,111 @@
+name: Terbitkan / Kelola Lisensi Pelanggan
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Aksi yang mau dilakukan"
+        required: true
+        type: choice
+        options:
+          - issue
+          - release-device
+          - deactivate
+        default: issue
+      customer:
+        description: "Nama pelanggan (WAJIB untuk aksi 'issue')"
+        required: false
+        type: string
+      plan:
+        description: "Plan (untuk aksi 'issue')"
+        required: false
+        type: choice
+        options:
+          - standard
+          - pro
+        default: standard
+      devices:
+        description: "Maks jumlah device (untuk aksi 'issue')"
+        required: false
+        type: string
+        default: "1"
+      license_key:
+        description: "Kode lisensi, mis. POS-A1B2-C3D4-E5F6 (WAJIB untuk 'release-device' & 'deactivate')"
+        required: false
+        type: string
+      device_id:
+        description: "deviceId yang mau dilepas (WAJIB untuk 'release-device' — lihat Firestore Console > licenses > dokumen terkait > field devices)"
+        required: false
+        type: string
+
+# Pengganti 'node scripts/issue-license.js ...' yang biasanya dijalankan dari terminal lokal.
+# Isi form di atas lewat tab Actions > workflow ini > "Run workflow", lalu lihat hasilnya
+# (kode lisensi baru, dsb.) di halaman run tersebut > Summary — tidak perlu terminal sama sekali.
+#
+# Butuh 1 GitHub Secret yang SAMA dengan workflow deploy_license_functions.yml:
+#   FIREBASE_SERVICE_ACCOUNT_JSON — isi apa adanya dari file service account (lihat
+#   LICENSING_SETUP.md langkah 6 / LICENSING_SETUP_WEB.md).
+jobs:
+  manage-license:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Tulis file service account
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$SA_JSON" > functions/service-account.json
+
+      - name: Validasi input
+        run: |
+          if [ "${{ inputs.action }}" = "issue" ] && [ -z "${{ inputs.customer }}" ]; then
+            echo "::error::Aksi 'issue' wajib mengisi field 'customer'."
+            exit 1
+          fi
+          if [ "${{ inputs.action }}" = "release-device" ] && { [ -z "${{ inputs.license_key }}" ] || [ -z "${{ inputs.device_id }}" ]; }; then
+            echo "::error::Aksi 'release-device' wajib mengisi 'license_key' dan 'device_id'."
+            exit 1
+          fi
+          if [ "${{ inputs.action }}" = "deactivate" ] && [ -z "${{ inputs.license_key }}" ]; then
+            echo "::error::Aksi 'deactivate' wajib mengisi 'license_key'."
+            exit 1
+          fi
+
+      - name: Jalankan issue-license.js
+        working-directory: functions
+        run: |
+          case "${{ inputs.action }}" in
+            issue)
+              node scripts/issue-license.js \
+                --customer "${{ inputs.customer }}" \
+                --plan "${{ inputs.plan }}" \
+                --devices "${{ inputs.devices }}" | tee /tmp/out.txt
+              ;;
+            release-device)
+              node scripts/issue-license.js \
+                --key "${{ inputs.license_key }}" \
+                --release-device "${{ inputs.device_id }}" | tee /tmp/out.txt
+              ;;
+            deactivate)
+              node scripts/issue-license.js --deactivate "${{ inputs.license_key }}" | tee /tmp/out.txt
+              ;;
+          esac
+
+      - name: Tampilkan hasil di ringkasan run
+        if: always()
+        run: |
+          {
+            echo "## Hasil aksi: ${{ inputs.action }}"
+            echo '```'
+            cat /tmp/out.txt 2>/dev/null || echo "(tidak ada output — cek log step sebelumnya)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
