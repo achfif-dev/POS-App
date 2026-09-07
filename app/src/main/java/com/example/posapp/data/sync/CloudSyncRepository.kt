@@ -71,6 +71,17 @@ class CloudSyncRepository @Inject constructor() {
         }
     }
 
+    /**
+     * TEMUAN KEAMANAN (audit ulang): sebelumnya dokumen `outlet_summaries/{outletId}_{dateKey}`
+     * ditulis TANPA identitas kepemilikan apa pun — rule hanya mengecek `request.auth != null`
+     * (semua pengguna app ini, sign-in anonim yang sifatnya identik satu sama lain). Artinya
+     * siapa pun yang tahu/menebak outletId cabang lain (dipakai sebagai bagian docId, jadi bisa
+     * ditebak kalau ID itu bocor lewat log/screenshot Pengaturan) bisa MENIMPA angka omzet
+     * cabang itu dengan angka palsu di layar "Ringkasan Semua Cabang" pemilik. Sekarang setiap
+     * docId dikunci ke `ownerUid` (identitas akun anonim Firebase device pengirim) — lihat
+     * firestore.rules untuk penegakan sisi server yang sesungguhnya (field ini di client hanya
+     * melengkapi rule, BUKAN pengganti rule, karena client selalu dianggap tidak tepercaya).
+     */
     suspend fun pushDailySummary(summary: OutletSalesSummary) {
         val db = firestoreOrNull()
         val auth = authOrNull()
@@ -84,6 +95,11 @@ class CloudSyncRepository @Inject constructor() {
                 _status.value = CloudSyncStatus.Error("Gagal autentikasi cloud (cek koneksi internet)")
                 return
             }
+            val uid = auth.currentUser?.uid
+            if (uid == null) {
+                _status.value = CloudSyncStatus.Error("Gagal autentikasi cloud (cek koneksi internet)")
+                return
+            }
             val docId = "${summary.outletId}_${summary.dateKey}"
             val data = hashMapOf(
                 "outletId" to summary.outletId,
@@ -91,7 +107,8 @@ class CloudSyncRepository @Inject constructor() {
                 "dateKey" to summary.dateKey,
                 "totalRevenue" to summary.totalRevenue,
                 "totalTransactions" to summary.totalTransactions,
-                "updatedAt" to summary.updatedAt
+                "updatedAt" to summary.updatedAt,
+                "ownerUid" to uid
             )
             db.collection("outlet_summaries").document(docId).set(data).awaitTask()
             _status.value = CloudSyncStatus.Success(System.currentTimeMillis())

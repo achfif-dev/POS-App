@@ -5,16 +5,22 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.dantsu.escposprinter.EscPosPrinter
+import com.dantsu.escposprinter.connection.DeviceConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothPrintersConnections
+import com.dantsu.escposprinter.connection.tcp.TcpConnection
+import com.dantsu.escposprinter.connection.usb.UsbConnection
+import com.dantsu.escposprinter.connection.usb.UsbPrintersConnections
 import com.dantsu.escposprinter.textparser.PrinterTextParserImg
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.export.ReceiptStrings
+import com.example.posapp.data.settings.StoreProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -28,15 +34,38 @@ sealed class PrintResult {
     data class Error(val message: String) : PrintResult()
 }
 
+/** Jenis koneksi printer yang didukung. LAN/WiFi & USB ditambahkan supaya toko dengan printer
+ * thermal non-Bluetooth (umum dipakai printer kasir 80mm kantor/resto) tidak perlu ganti alat. */
+enum class PrinterConnectionType { BLUETOOTH, LAN, USB }
+
+/** Konfigurasi printer tersimpan di Pengaturan > Profil Toko — lihat StoreProfileRepository. */
+data class PrinterConfig(
+    val type: PrinterConnectionType = PrinterConnectionType.BLUETOOTH,
+    val bluetoothName: String? = null,
+    val lanIpAddress: String = "",
+    val lanPort: Int = 9100,
+    val paperWidthMm: Float = 48f, // 48mm ~ printer 58mm umum; pakai 72f untuk printer 80mm
+)
+
+/** Konversi dari StoreProfile (DataStore) ke [PrinterConfig] yang dipakai [PrinterRepository]. */
+fun StoreProfile.toPrinterConfig(): PrinterConfig = PrinterConfig(
+    type = runCatching { PrinterConnectionType.valueOf(printerConnectionType) }.getOrDefault(PrinterConnectionType.BLUETOOTH),
+    bluetoothName = selectedPrinterName,
+    lanIpAddress = printerLanIp,
+    lanPort = printerLanPort,
+    paperWidthMm = printerPaperWidthMm,
+)
+
 /**
- * Menangani koneksi & pencetakan struk ke thermal printer Bluetooth (ESC/POS)
- * menggunakan library DantSu/ESCPOS-ThermalPrinter-Android.
+ * Menangani koneksi & pencetakan struk ke thermal printer ESC/POS lewat Bluetooth, LAN/WiFi
+ * (TCP raw port 9100, standar hampir semua printer thermal jaringan/label), atau USB Host —
+ * pakai library DantSu/ESCPOS-ThermalPrinter-Android yang sudah mendukung ketiganya.
  *
- * Alur penggunaan:
- * 1. Pastikan printer sudah di-pair lewat pengaturan Bluetooth Android terlebih dahulu.
- * 2. Panggil [listPairedPrinters] untuk menampilkan daftar printer ke pengguna (opsional,
- *    jika ada lebih dari satu printer terpasang).
- * 3. Panggil [printReceipt] dengan data transaksi untuk mencetak struk.
+ * Alur:
+ * 1. Bluetooth: pastikan printer sudah di-pair lewat Pengaturan Bluetooth Android dulu.
+ * 2. LAN/WiFi: cukup tahu IP printer di jaringan yang sama (biasa tercetak di struk tes printer/
+ *    menu printer itu sendiri) — tidak perlu pairing apa pun.
+ * 3. USB: sambungkan lewat kabel OTG, Android akan memunculkan dialog izin USB otomatis.
  */
 @Singleton
 class PrinterRepository @Inject constructor(
@@ -46,7 +75,7 @@ class PrinterRepository @Inject constructor(
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
     /** Nama printer Bluetooth yang sudah di-pair di sistem (untuk ditampilkan sebagai pilihan). */
-    fun listPairedPrinters(): List<String> {
+    fun listPairedBluetoothPrinters(): List<String> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
@@ -60,18 +89,23 @@ class PrinterRepository @Inject constructor(
         }
     }
 
+    /** Daftar printer USB yang terdeteksi tersambung (belum tentu sudah diberi izin akses). */
+    fun listUsbPrinters(): List<String> {
+        return try {
+            UsbPrintersConnections.getUsbPrinters(context)?.map { it.device.deviceName } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /**
-     * Sebelumnya SELALU memakai [BluetoothPrintersConnections.selectFirstPaired] walau
-     * [listPairedPrinters] menampilkan semua printer ter-pairing — kalau toko punya >1 printer,
-     * pengguna tidak pernah bisa benar-benar memilih yang mana dipakai. Sekarang cocokkan dulu
-     * dengan [printerName] yang tersimpan di Pengaturan; kalau tidak diisi atau tidak ketemu
-     * (mis. printer itu sudah di-unpair), fallback ke printer ter-pairing pertama seperti biasa.
+     * Sebelumnya SELALU memakai [BluetoothPrintersConnections.selectFirstPaired] walau daftar
+     * printer bisa lebih dari satu — kalau toko punya >1 printer, pengguna tidak pernah bisa
+     * benar-benar memilih yang mana dipakai. Sekarang cocokkan dulu dengan nama tersimpan;
+     * kalau tidak diisi/tidak ketemu (mis. printer itu sudah di-unpair), fallback ke yang
+     * ter-pairing pertama seperti biasa.
      */
-    private fun selectConnection(printerName: String?): BluetoothConnection? {
-        // Pengecekan izin di FUNGSI INI SENDIRI (bukan cuma di printReceipt yang memanggilnya) —
-        // Lint (MissingPermission) butuh bukti pengecekan izin di scope yang sama dengan
-        // pemanggilan API yang butuh BLUETOOTH_CONNECT (device.name), persis pola yang sudah
-        // dipakai di listPairedPrinters().
+    private fun selectBluetoothConnection(printerName: String?): BluetoothConnection? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
@@ -89,6 +123,28 @@ class PrinterRepository @Inject constructor(
         return BluetoothPrintersConnections.selectFirstPaired()
     }
 
+    private fun resolveConnection(config: PrinterConfig): DeviceConnection? = when (config.type) {
+        PrinterConnectionType.BLUETOOTH -> selectBluetoothConnection(config.bluetoothName)
+        PrinterConnectionType.LAN -> {
+            if (config.lanIpAddress.isBlank()) null
+            // BUG PENTING (ditemukan saat audit ulang): parameter timeout TcpConnection library
+            // DantSu satuannya MILIDETIK (lihat contoh resmi & issue tracker library ini —
+            // `TcpConnection(ip, port, 60000)` untuk timeout 60 detik), BUKAN detik seperti yang
+            // saya kira sebelumnya. Nilai lama (15) berarti timeout 15 MILIDETIK — nyaris pasti
+            // gagal connect ke printer LAN manapun karena jaringan butuh lebih dari itu untuk
+            // handshake TCP. Diperbaiki jadi 15000 (15 detik, wajar untuk jaringan lokal/WiFi).
+            else TcpConnection(config.lanIpAddress.trim(), config.lanPort, 15000)
+        }
+        PrinterConnectionType.USB -> try {
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+            UsbPrintersConnections.getUsbPrinters(context)?.firstOrNull()?.let { conn ->
+                UsbConnection(usbManager, conn.device)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun printReceipt(
         storeName: String,
         transaction: TransactionEntity,
@@ -97,32 +153,34 @@ class PrinterRepository @Inject constructor(
         receiptFooter: String = "Terima kasih!",
         logoImagePath: String? = null,
         language: String = "id",
-        printerName: String? = null
+        printerConfig: PrinterConfig = PrinterConfig()
     ): PrintResult {
         val strings = ReceiptStrings.forLanguage(language)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        if (printerConfig.type == PrinterConnectionType.BLUETOOTH &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
         ) {
             return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
         }
         return try {
-            val connection: BluetoothConnection = selectConnection(printerName)
-                ?: return PrintResult.Error("Tidak ada printer Bluetooth yang terpasang/di-pair")
+            val connection = resolveConnection(printerConfig) ?: return PrintResult.Error(
+                when (printerConfig.type) {
+                    PrinterConnectionType.BLUETOOTH -> "Tidak ada printer Bluetooth yang terpasang/di-pair"
+                    PrinterConnectionType.LAN -> "Isi alamat IP printer LAN/WiFi dulu di Pengaturan > Profil Toko"
+                    PrinterConnectionType.USB -> "Tidak ada printer USB yang terdeteksi. Cek kabel OTG & izin akses USB."
+                }
+            )
 
-            // 384 dots ~ printer thermal 58mm umum. Ganti ke 576 untuk printer 80mm.
-            val printer = EscPosPrinter(connection, 203, 48f, 32)
+            // 384 dots (48mm) ~ printer thermal 58mm umum. paperWidthMm 72f -> printer 80mm.
+            val charsPerLine = if (printerConfig.paperWidthMm >= 70f) 48 else 32
+            val printer = EscPosPrinter(connection, 203, printerConfig.paperWidthMm, charsPerLine)
 
             val sb = StringBuilder()
             val logoBitmap = logoImagePath?.let { path ->
-                try {
-                    BitmapFactory.decodeFile(path)
-                } catch (e: Exception) {
-                    null
-                }
+                try { BitmapFactory.decodeFile(path) } catch (e: Exception) { null }
             }
             if (logoBitmap != null) {
-                // Batasi lebar logo agar proporsional dengan lebar kertas struk (~384 dots / 58mm).
                 val maxWidth = 280
                 val scaledLogo = if (logoBitmap.width > maxWidth) {
                     val scale = maxWidth.toFloat() / logoBitmap.width
@@ -162,7 +220,7 @@ class PrinterRepository @Inject constructor(
             printer.printFormattedTextAndCut(sb.toString())
             PrintResult.Success
         } catch (e: Exception) {
-            PrintResult.Error(e.message ?: "Gagal mencetak struk. Pastikan printer menyala dan sudah di-pair.")
+            PrintResult.Error(e.message ?: "Gagal mencetak struk. Pastikan printer menyala dan terhubung.")
         }
     }
 

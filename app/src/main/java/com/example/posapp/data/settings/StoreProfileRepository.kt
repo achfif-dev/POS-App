@@ -48,6 +48,22 @@ data class StoreProfile(
      * struk. Null = pakai printer ter-pairing pertama yang ditemukan (perilaku lama, dipakai
      * kalau toko hanya punya satu printer atau belum pernah memilih). Lihat PrinterRepository. */
     val selectedPrinterName: String? = null,
+    /** Jenis koneksi printer: "BLUETOOTH", "LAN", atau "USB" — lihat PrinterConnectionType. */
+    val printerConnectionType: String = "BLUETOOTH",
+    /** Alamat IP printer thermal jaringan/WiFi (hanya dipakai kalau printerConnectionType=LAN). */
+    val printerLanIp: String = "",
+    /** Port TCP printer LAN — standar hampir semua printer thermal jaringan adalah 9100. */
+    val printerLanPort: Int = 9100,
+    /** Lebar kertas struk dalam mm — 48 untuk printer 58mm (umum), 72 untuk printer 80mm. */
+    val printerPaperWidthMm: Float = 48f,
+    /** Jenis koneksi printer: "BLUETOOTH", "LAN", atau "USB". Lihat PrinterConnectionType. */
+    val printerConnectionType: String = "BLUETOOTH",
+    /** Alamat IP printer thermal jaringan (LAN/WiFi) — hanya dipakai kalau printerConnectionType = "LAN". */
+    val printerLanIp: String = "",
+    /** Port TCP printer jaringan, standar mayoritas printer thermal adalah 9100. */
+    val printerLanPort: Int = 9100,
+    /** Lebar kertas printer dalam mm: 48f untuk printer 58mm (umum), 72f untuk printer 80mm. */
+    val printerPaperWidthMm: Float = 48f,
     /** Tipe bisnis toko untuk menyesuaikan fitur relevan yang ditampilkan: RETAIL, FNB
      * (restoran/kafe — menambah tag nomor meja/pesanan di kasir), atau GENERAL (netral). */
     val businessType: String = "GENERAL",
@@ -101,6 +117,10 @@ class StoreProfileRepository @Inject constructor(
         val OUTLET_NAME = stringPreferencesKey("outlet_name")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
         val SELECTED_PRINTER_NAME = stringPreferencesKey("selected_printer_name")
+        val PRINTER_CONNECTION_TYPE = stringPreferencesKey("printer_connection_type")
+        val PRINTER_LAN_IP = stringPreferencesKey("printer_lan_ip")
+        val PRINTER_LAN_PORT = androidx.datastore.preferences.core.intPreferencesKey("printer_lan_port")
+        val PRINTER_PAPER_WIDTH_MM = androidx.datastore.preferences.core.floatPreferencesKey("printer_paper_width_mm")
         val BUSINESS_TYPE = stringPreferencesKey("business_type")
         val LOYALTY_ENABLED = booleanPreferencesKey("loyalty_enabled")
         val LOYALTY_RUPIAH_PER_POINT = androidx.datastore.preferences.core.longPreferencesKey("loyalty_rupiah_per_point")
@@ -131,6 +151,10 @@ class StoreProfileRepository @Inject constructor(
             outletName = prefs[Keys.OUTLET_NAME] ?: "Cabang Utama",
             cloudSyncEnabled = prefs[Keys.CLOUD_SYNC_ENABLED] ?: false,
             selectedPrinterName = prefs[Keys.SELECTED_PRINTER_NAME],
+            printerConnectionType = prefs[Keys.PRINTER_CONNECTION_TYPE] ?: "BLUETOOTH",
+            printerLanIp = prefs[Keys.PRINTER_LAN_IP] ?: "",
+            printerLanPort = prefs[Keys.PRINTER_LAN_PORT] ?: 9100,
+            printerPaperWidthMm = prefs[Keys.PRINTER_PAPER_WIDTH_MM] ?: 48f,
             businessType = prefs[Keys.BUSINESS_TYPE] ?: "GENERAL",
             loyaltyEnabled = prefs[Keys.LOYALTY_ENABLED] ?: false,
             loyaltyRupiahPerPoint = prefs[Keys.LOYALTY_RUPIAH_PER_POINT] ?: 10000L,
@@ -238,6 +262,16 @@ class StoreProfileRepository @Inject constructor(
     suspend fun setSelectedPrinterName(name: String?) {
         context.storeProfileDataStore.edit { prefs ->
             if (name == null) prefs.remove(Keys.SELECTED_PRINTER_NAME) else prefs[Keys.SELECTED_PRINTER_NAME] = name
+        }
+    }
+
+    /** @param type "BLUETOOTH", "LAN", atau "USB" — lihat PrinterConnectionType. */
+    suspend fun setPrinterConfig(type: String, lanIp: String, lanPort: Int, paperWidthMm: Float) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.PRINTER_CONNECTION_TYPE] = type
+            prefs[Keys.PRINTER_LAN_IP] = lanIp
+            prefs[Keys.PRINTER_LAN_PORT] = lanPort
+            prefs[Keys.PRINTER_PAPER_WIDTH_MM] = paperWidthMm
         }
     }
 
