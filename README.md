@@ -1,10 +1,21 @@
-# Kasir POS (Full Offline) — Android Kotlin + Jetpack Compose
+# Kasir POS (Full Offline-First + Hybrid Online) — Android Kotlin + Jetpack Compose
 
 Aplikasi kasir offline-first, Clean Architecture, siap di-build otomatis lewat GitHub Actions
 tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung mode gelap).
 
+Transaksi harian tetap berjalan 100% offline. Beberapa fitur kompetitif tambahan (lisensi,
+QRIS otomatis, sinkronisasi lintas cabang) memakai internet HANYA saat momen tertentu, dan
+gagal dengan aman (fail-soft) ke perilaku offline biasa kalau tidak ada koneksi — lihat
+`LICENSING_SETUP.md` dan `PAYMENT_GATEWAY_SETUP.md` untuk setup masing-masing.
+
 ## Fitur yang sudah diimplementasikan penuh
 
+- **Sistem Lisensi Anti-Bajakan** (self-service, lihat `LICENSING_SETUP.md`) — aktivasi lewat
+  kode lisensi tanpa bantuan developer, verifikasi tanda tangan RSA offline.
+- **QRIS Otomatis via Midtrans** (self-service per toko, lihat `PAYMENT_GATEWAY_SETUP.md`) —
+  konfirmasi lunas realtime, QRIS statis manual tetap ada sebagai cadangan.
+- **Printer Bluetooth, LAN/WiFi, & USB** — tidak lagi terbatas Bluetooth saja.
+- **Cek Stok Semua Cabang** realtime (read-only) sebagai perluasan Sinkronisasi Cloud.
 - **Struktur project** Clean Architecture (`data`, `domain`, `presentation`, `di`).
 - **Tema Material 3 modern minimalis** — `presentation/theme/` (palet netral + aksen, light/dark otomatis).
 - **Room Database** — Produk, Kategori, Transaksi + Item, Penyesuaian Stok, Varian Produk,
@@ -67,6 +78,19 @@ tanpa perlu PC lokal. UI menggunakan tema Material 3 modern minimalis (mendukung
 
 ## Catatan teknis penting
 
+- **WAJIB sebelum rilis ke pelanggan pertama**: `LicenseCrypto.kt` masih berisi public key
+  placeholder — app akan SELALU menolak aktivasi lisensi (fail-closed, disengaja) sampai
+  developer menjalankan `LICENSING_SETUP.md`. Jangan lupa langkah ini atau semua pelanggan
+  tidak akan bisa aktivasi.
+- **QRIS Otomatis — keterbatasan yang perlu diketahui**: order ID yang dikirim ke Midtrans saat
+  checkout (`QrisAutoPaymentViewModel`) adalah ID sementara (`TEMP-<timestamp>`), dibuat SEBELUM
+  transaksi final tersimpan ke database (nomor invoice baru dibuat setelah checkout selesai).
+  Artinya saat ini belum ada kolom yang menyimpan tautan `order_id Midtrans <-> invoiceNumber`
+  di `TransactionEntity` untuk rekonsiliasi laporan keuangan lintas sistem. Cukup aman untuk
+  konfirmasi status "Lunas" real-time di kasir (yang sudah berfungsi penuh), tapi kalau butuh
+  rekonsiliasi akuntansi formal ke dashboard Midtrans, tambahkan kolom `midtransOrderId` ke
+  `TransactionEntity` (migrasi baru) dan alirkan `autoOrderId` dari `PosScreen.kt` ke
+  `CheckoutUseCase` sebagai pengembangan lanjutan.
 - `minSdk = 26` (Android 8.0+) karena Apache POI (export Excel) memakai
   `java.lang.invoke.MethodHandle` yang baru didukung mulai API 26.
 - Workflow CI menggunakan `gradle/actions/setup-gradle` dengan `gradle-version: '8.7'` (bukan

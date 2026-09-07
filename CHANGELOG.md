@@ -4,6 +4,28 @@ Semua perubahan penting pada proyek ini dicatat di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versioning mengikuti [Semantic Versioning](https://semver.org/).
 
 ## [Unrilis]
+### Ditambahkan (Fase Bersaing Kompetitor)
+- **Sistem Lisensi Anti-Bajakan** (self-service): aktivasi lewat kode lisensi yang ditempel
+  sendiri oleh pelanggan (tanpa bantuan developer), diverifikasi via tanda tangan RSA-2048 —
+  private key hanya ada di Cloud Functions, tidak pernah ikut ke dalam APK. Sekali aktivasi
+  online, aplikasi tetap 100% bisa dipakai offline (revalidasi otomatis diam-diam tiap ada
+  internet lewat WorkManager, masa tenggang 14 hari sebelum benar-benar terkunci). Developer
+  cukup build SATU APK generik untuk semua pelanggan — lihat `LICENSING_SETUP.md`.
+- **Payment Gateway QRIS Otomatis (Midtrans)**: setiap toko menghubungkan akun Midtrans sendiri
+  (uang masuk langsung ke rekening toko, bukan lewat developer) lewat Pengaturan > Payment
+  Gateway — sepenuhnya self-service. Status "Lunas" terkonfirmasi otomatis realtime di layar
+  Kasir lewat webhook + Firestore listener, tanpa cek manual. QRIS statis manual tetap tersedia
+  sebagai cadangan offline. Lihat `PAYMENT_GATEWAY_SETUP.md`.
+- **Printer LAN/WiFi & USB**: `PrinterRepository` kini mendukung 3 jenis koneksi printer thermal
+  (Bluetooth/LAN-TCP/USB Host), tidak lagi terbatas Bluetooth saja. Diatur di Pengaturan > Profil
+  Toko > Printer Struk, termasuk pilihan lebar kertas 58mm/80mm.
+- **Cek Stok Semua Cabang**: perluasan Sinkronisasi Cloud — tiap cabang (opt-in, dari toggle yang
+  sama dengan ringkasan omzet) mengirim snapshot katalog produk+stoknya secara berkala, admin
+  bisa melihat stok & harga cabang lain secara realtime (read-only, tidak menimpa data lokal
+  cabang sendiri) dari Pengaturan > Multi-Cabang > Cek Stok Semua Cabang.
+- (Struk digital via WhatsApp sudah ada sejak sebelumnya — lihat entri Ditambahkan di bawah.)
+
+## [Unrilis - riwayat sebelumnya]
 ### Ditambahkan
 - **Retur/Refund & Void Transaksi**: tabel baru `transaction_returns` & `transaction_return_items`
   (migrasi v10 -> v11). Retur boleh diproses Kasir maupun Admin (alasan wajib, per-item bisa
