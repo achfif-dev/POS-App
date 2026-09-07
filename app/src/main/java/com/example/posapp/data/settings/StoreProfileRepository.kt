@@ -56,14 +56,6 @@ data class StoreProfile(
     val printerLanPort: Int = 9100,
     /** Lebar kertas struk dalam mm — 48 untuk printer 58mm (umum), 72 untuk printer 80mm. */
     val printerPaperWidthMm: Float = 48f,
-    /** Jenis koneksi printer: "BLUETOOTH", "LAN", atau "USB". Lihat PrinterConnectionType. */
-    val printerConnectionType: String = "BLUETOOTH",
-    /** Alamat IP printer thermal jaringan (LAN/WiFi) — hanya dipakai kalau printerConnectionType = "LAN". */
-    val printerLanIp: String = "",
-    /** Port TCP printer jaringan, standar mayoritas printer thermal adalah 9100. */
-    val printerLanPort: Int = 9100,
-    /** Lebar kertas printer dalam mm: 48f untuk printer 58mm (umum), 72f untuk printer 80mm. */
-    val printerPaperWidthMm: Float = 48f,
     /** Tipe bisnis toko untuk menyesuaikan fitur relevan yang ditampilkan: RETAIL, FNB
      * (restoran/kafe — menambah tag nomor meja/pesanan di kasir), atau GENERAL (netral). */
     val businessType: String = "GENERAL",

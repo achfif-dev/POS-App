@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.dantsu.escposprinter.EscPosPrinter
@@ -13,7 +12,6 @@ import com.dantsu.escposprinter.connection.DeviceConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothConnection
 import com.dantsu.escposprinter.connection.bluetooth.BluetoothPrintersConnections
 import com.dantsu.escposprinter.connection.tcp.TcpConnection
-import com.dantsu.escposprinter.connection.usb.UsbConnection
 import com.dantsu.escposprinter.connection.usb.UsbPrintersConnections
 import com.dantsu.escposprinter.textparser.PrinterTextParserImg
 import com.example.posapp.data.local.entity.PaymentMethod
@@ -92,7 +90,7 @@ class PrinterRepository @Inject constructor(
     /** Daftar printer USB yang terdeteksi tersambung (belum tentu sudah diberi izin akses). */
     fun listUsbPrinters(): List<String> {
         return try {
-            UsbPrintersConnections.getUsbPrinters(context)?.map { it.device.deviceName } ?: emptyList()
+            UsbPrintersConnections(context).list?.map { it.device.deviceName } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -136,10 +134,7 @@ class PrinterRepository @Inject constructor(
             else TcpConnection(config.lanIpAddress.trim(), config.lanPort, 15000)
         }
         PrinterConnectionType.USB -> try {
-            val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-            UsbPrintersConnections.getUsbPrinters(context)?.firstOrNull()?.let { conn ->
-                UsbConnection(usbManager, conn.device)
-            }
+            UsbPrintersConnections(context).list?.firstOrNull()
         } catch (e: Exception) {
             null
         }
