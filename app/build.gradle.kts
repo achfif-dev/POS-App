@@ -40,7 +40,7 @@ android {
         // identitas app yang publik/dipakai Play Store & dilihat pengguna — com.example.* ditolak
         // Play Store dan tidak profesional untuk app yang mau disewakan ke toko lain. Ganti
         // "id.gwg.posapp" di bawah sesuai domain/brand Anda sendiri sebelum rilis publik.
-        applicationId = "id.gwg.posapp"
+        applicationId = "id.shiftq.posapp"
         minSdk = 26
         targetSdk = 34
         versionCode = 2
