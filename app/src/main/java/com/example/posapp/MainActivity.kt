@@ -25,8 +25,11 @@ import androidx.navigation.navArgument
 import com.example.posapp.data.auth.AutoLockManager
 import com.example.posapp.data.auth.LocalAutoLockManager
 import com.example.posapp.data.auth.SessionManager
+import com.example.posapp.data.license.LicenseStatus
 import com.example.posapp.domain.auth.Permission
 import com.example.posapp.presentation.auth.AuthGateViewModel
+import com.example.posapp.presentation.license.LicenseActivationScreen
+import com.example.posapp.presentation.license.LicenseViewModel
 import com.example.posapp.presentation.auth.LoginScreen
 import com.example.posapp.presentation.customer.CustomerDetailScreen
 import com.example.posapp.presentation.customer.CustomerScreen
@@ -67,7 +70,9 @@ class MainActivity : ComponentActivity() {
             PosAppTheme(customPrimaryHex = storeProfile.appColorHex, fontChoice = storeProfile.fontChoice) {
                 CompositionLocalProvider(LocalAutoLockManager provides autoLockManager) {
                     Surface(modifier = Modifier) {
-                        PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                        LicenseGate {
+                            PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                        }
                     }
                 }
             }
@@ -86,6 +91,23 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         lifecycleScope.launch { autoLockManager.onAppForegroundedCheckLock() }
+    }
+}
+
+/**
+ * Gerbang lisensi PALING LUAR — dicek sebelum login PIN/nav-graph apa pun. Kalau status BUKAN
+ * ACTIVE/GRACE_PERIOD, seluruh app diganti dengan [LicenseActivationScreen] (self-service, lihat
+ * file itu) sampai pengguna berhasil aktivasi/revalidasi. GRACE_PERIOD tetap meloloskan ke [content]
+ * supaya toko tidak terkunci mendadak — [LicenseActivationScreen] sendiri yang menampilkan
+ * pengingat halus lewat rute lain (mis. banner di Dashboard/Pengaturan bisa ditambah kalau perlu).
+ */
+@Composable
+private fun LicenseGate(content: @Composable () -> Unit) {
+    val licenseViewModel: LicenseViewModel = hiltViewModel()
+    val licenseState by licenseViewModel.licenseState.collectAsState()
+    when (licenseState.status) {
+        LicenseStatus.ACTIVE, LicenseStatus.GRACE_PERIOD -> content()
+        LicenseStatus.NOT_ACTIVATED, LicenseStatus.EXPIRED -> LicenseActivationScreen(onActivated = {})
     }
 }
 
@@ -259,8 +281,29 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                     onOpenCloudSync = { navController.navigate("cloud_sync") },
                     onOpenMultiOutlet = { navController.navigate("multi_outlet") },
                     onOpenAuditLog = { navController.navigate("audit_log") },
-                    onOpenSuppliers = { navController.navigate("suppliers") }
+                    onOpenSuppliers = { navController.navigate("suppliers") },
+                    onOpenPaymentGateway = { navController.navigate("payment_gateway") },
+                    onOpenLicense = { navController.navigate("license_status") },
+                    onOpenOutletStockCheck = { navController.navigate("outlet_stock_check") }
                 )
+            }
+        }
+        composable("payment_gateway") {
+            // Kredensial payment gateway toko sendiri -> setara sensitifnya dengan rute
+            // Pengaturan lain (bisa mengubah rekening tujuan uang QRIS masuk), admin-only.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                com.example.posapp.presentation.payment.PaymentGatewaySettingsScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("license_status") {
+            // Info lisensi boleh dilihat siapa pun yang bisa masuk Pengaturan (bukan rahasia
+            // finansial toko), tetap dibungkus guard Pengaturan yang sama untuk konsistensi.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                com.example.posapp.presentation.license.LicenseActivationScreen(onActivated = { navController.popBackStack() })
             }
         }
         composable("store_profile") {
@@ -308,6 +351,14 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
                 MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("outlet_stock_check") {
+            // Cek stok realtime lintas cabang (read-only) -> data tingkat pemilik, admin-only.
+            val currentUser by sessionManager.currentUser.collectAsState()
+            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+            RoleGatedRoute(allowed = allowed, navController = navController) {
+                com.example.posapp.presentation.sync.OutletStockCheckScreen(onBack = { navController.popBackStack() })
             }
         }
         composable("audit_log") {

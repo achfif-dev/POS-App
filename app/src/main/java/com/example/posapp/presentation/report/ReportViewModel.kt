@@ -13,6 +13,7 @@ import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
+import com.example.posapp.data.printer.toPrinterConfig
 import com.example.posapp.data.repository.ExpenseRepository
 import com.example.posapp.data.repository.ReturnItemRequest
 import com.example.posapp.data.repository.ReturnValidationException
@@ -293,7 +294,7 @@ class ReportViewModel @Inject constructor(
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
                     language = profile.receiptLanguage,
-                    printerName = profile.selectedPrinterName
+                    printerConfig = profile.toPrinterConfig()
                 )
             }
             when (result) {

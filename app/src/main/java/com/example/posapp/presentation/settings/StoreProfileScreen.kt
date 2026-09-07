@@ -638,49 +638,146 @@ fun StoreProfileScreen(
                     Text("Printer Struk", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Pilih printer Bluetooth mana yang dipakai untuk cetak struk, kalau HP ini sudah di-pairing dengan lebih dari satu printer",
+                        "Pilih jenis koneksi printer thermal yang dipakai toko ini.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(10.dp))
-                    var pairedPrinters by remember { mutableStateOf(viewModel.listPairedPrinters()) }
-                    if (pairedPrinters.isEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "Belum ada printer Bluetooth yang di-pairing. Pairing dulu lewat Pengaturan Bluetooth Android.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
+
+                    var connType by remember(profile.printerConnectionType) { mutableStateOf(profile.printerConnectionType) }
+                    var lanIp by remember(profile.printerLanIp) { mutableStateOf(profile.printerLanIp) }
+                    var lanPort by remember(profile.printerLanPort) { mutableStateOf(profile.printerLanPort.toString()) }
+                    var paperWidth by remember(profile.printerPaperWidthMm) { mutableStateOf(profile.printerPaperWidthMm) }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = connType == "BLUETOOTH",
+                            onClick = {
+                                connType = "BLUETOOTH"
+                                viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth)
+                            },
+                            label = { Text("Bluetooth") }
+                        )
+                        FilterChip(
+                            selected = connType == "LAN",
+                            onClick = {
+                                connType = "LAN"
+                                viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth)
+                            },
+                            label = { Text("LAN/WiFi") }
+                        )
+                        FilterChip(
+                            selected = connType == "USB",
+                            onClick = {
+                                connType = "USB"
+                                viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth)
+                            },
+                            label = { Text("USB") }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = paperWidth < 60f,
+                            onClick = {
+                                paperWidth = 48f
+                                viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth)
+                            },
+                            label = { Text("Kertas 58mm") }
+                        )
+                        FilterChip(
+                            selected = paperWidth >= 60f,
+                            onClick = {
+                                paperWidth = 72f
+                                viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth)
+                            },
+                            label = { Text("Kertas 80mm") }
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    when (connType) {
+                        "LAN" -> {
+                            OutlinedTextField(
+                                value = lanIp,
+                                onValueChange = { lanIp = it },
+                                label = { Text("Alamat IP Printer") },
+                                placeholder = { Text("mis. 192.168.1.50") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
                             )
-                            TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = lanPort,
+                                onValueChange = { lanPort = it.filter { c -> c.isDigit() } },
+                                label = { Text("Port (default 9100)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { viewModel.setPrinterConnection(connType, lanIp, lanPort.toIntOrNull() ?: 9100, paperWidth) }) {
+                                Text("Simpan Alamat Printer")
+                            }
+                        }
+                        "USB" -> {
+                            var usbPrinters by remember { mutableStateOf(viewModel.listUsbPrinters()) }
+                            if (usbPrinters.isEmpty()) {
+                                Text(
+                                    "Belum ada printer USB terdeteksi. Sambungkan lewat kabel OTG lalu muat ulang.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                usbPrinters.forEach { name -> Text("• $name", style = MaterialTheme.typography.bodySmall) }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            TextButton(onClick = { usbPrinters = viewModel.listUsbPrinters() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Muat Ulang")
+                                Text("Muat Ulang Daftar Printer USB")
                             }
                         }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            pairedPrinters.forEach { printerName ->
-                                val isSelected = profile.selectedPrinterName == printerName
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { viewModel.setSelectedPrinter(printerName) }
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(selected = isSelected, onClick = { viewModel.setSelectedPrinter(printerName) })
+                        else -> {
+                            var pairedPrinters by remember { mutableStateOf(viewModel.listPairedPrinters()) }
+                            if (pairedPrinters.isEmpty()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "Belum ada printer Bluetooth yang di-pairing. Pairing dulu lewat Pengaturan Bluetooth Android.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Muat Ulang")
+                                    }
+                                }
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    pairedPrinters.forEach { printerName ->
+                                        val isSelected = profile.selectedPrinterName == printerName
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { viewModel.setSelectedPrinter(printerName) }
+                                                .padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(selected = isSelected, onClick = { viewModel.setSelectedPrinter(printerName) })
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(printerName)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text(printerName)
+                                    Text("Muat Ulang Daftar Printer")
                                 }
                             }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = { pairedPrinters = viewModel.listPairedPrinters() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Muat Ulang Daftar Printer")
                         }
                     }
                 }

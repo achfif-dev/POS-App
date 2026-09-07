@@ -857,6 +857,77 @@ private fun PaymentModal(
                             )
                         }
                     }
+
+                    // QRIS Otomatis (Midtrans) — opsional, hanya muncul kalau toko sudah
+                    // menghubungkan payment gateway sendiri di Pengaturan > Payment Gateway.
+                    // Statis di atas TETAP jalan sebagai cadangan kalau internet mati.
+                    val qrisAutoViewModel: com.example.posapp.presentation.pos.QrisAutoPaymentViewModel = hiltViewModel()
+                    val gatewayConfigured by qrisAutoViewModel.isConfigured.collectAsState()
+                    val autoState by qrisAutoViewModel.uiState.collectAsState()
+                    val autoOrderId = remember { "TEMP-${System.currentTimeMillis()}" }
+
+                    // BUG PENTING (ditemukan saat audit ulang): qrisAutoViewModel didapat lewat
+                    // hiltViewModel() yang di-scope ke NavBackStackEntry rute "pos" — instance-nya
+                    // BERTAHAN selama kasir tidak pindah layar, bukan dibuat baru setiap dialog
+                    // pembayaran ini dibuka/ditutup. Tanpa reset eksplisit ini, status "SETTLED"
+                    // dari transaksi QRIS SEBELUMNYA bisa "bocor" ke transaksi berikutnya (kasir
+                    // buka dialog bayar baru, langsung terlihat tercentang Lunas padahal belum
+                    // ada pembayaran sama sekali untuk transaksi ini). LaunchedEffect(Unit) di sini
+                    // jalan setiap blok QRIS ini MASUK ke komposisi (dialog baru dibuka, atau
+                    // metode bayar baru saja dipindah ke QRIS) — memastikan selalu mulai bersih.
+                    LaunchedEffect(Unit) { qrisAutoViewModel.reset() }
+
+                    if (gatewayConfigured) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(12.dp))
+                        Text("QRIS Otomatis (Verifikasi Real-time)", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(8.dp))
+                        when {
+                            autoState.charge == null && !autoState.isCreating -> {
+                                Button(
+                                    onClick = { qrisAutoViewModel.createCharge(autoOrderId, dynamicAmount) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Buat QRIS Otomatis ${rupiah.format(dynamicAmount.toDouble())}") }
+                            }
+                            autoState.isCreating -> {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                            autoState.status == com.example.posapp.data.payment.QrisChargeStatus.SETTLED -> {
+                                Text(
+                                    "✓ Pembayaran terkonfirmasi otomatis oleh Midtrans",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                // BUG PENTING (ditemukan saat audit ulang): sebelumnya baris di
+                                // bawah memakai `dynamicAmount` (dihitung ULANG dari `remaining`
+                                // setiap recomposition) alih-alih nominal yang BENAR-BENAR dikirim
+                                // ke Midtrans saat charge dibuat (`autoState.charge.amount`, beku
+                                // sejak createCharge dipanggil). Kalau kasir sempat menambah/ubah
+                                // metode bayar lain SEBELUM pelanggan selesai scan QR, `remaining`
+                                // berubah dan `dynamicAmount` ikut berubah — sehingga jumlah yang
+                                // otomatis tercatat "Lunas" bisa BEDA dari nominal yang sungguh
+                                // dibayar pelanggan lewat QR tersebut (nota bisa salah catat).
+                                val settledAmount = autoState.charge?.amount ?: dynamicAmount
+                                LaunchedEffect(autoState.status) {
+                                    payments.add(com.example.posapp.domain.usecase.PaymentSplit(PaymentMethod.QRIS, settledAmount.toDouble()))
+                                }
+                            }
+                            else -> {
+                                autoState.charge?.qrisImageUrl?.let { url ->
+                                    AsyncImage(model = url, contentDescription = "QRIS Midtrans", modifier = Modifier.size(200.dp))
+                                }
+                                Text(
+                                    "Menunggu pembayaran... (otomatis terdeteksi, tidak perlu refresh)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        autoState.error?.let { err ->
+                            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
 
                 if (selectedMethod == PaymentMethod.CASH && quickCashAmounts.isNotEmpty()) {

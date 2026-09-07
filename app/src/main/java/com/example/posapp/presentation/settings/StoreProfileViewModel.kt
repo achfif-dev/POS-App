@@ -145,7 +145,10 @@ class StoreProfileViewModel @Inject constructor(
     /** Daftar nama printer Bluetooth yang sudah di-pair di sistem, untuk pilihan di UI Pengaturan
      * (dulu fungsi ini sudah ada di PrinterRepository tapi tidak pernah dipakai di mana pun —
      * struk selalu tercetak ke printer pertama yang ditemukan walau toko punya >1 printer). */
-    fun listPairedPrinters(): List<String> = printerRepository.listPairedPrinters()
+    fun listPairedPrinters(): List<String> = printerRepository.listPairedBluetoothPrinters()
+
+    /** Daftar printer USB yang terdeteksi tersambung (lihat Pengaturan > Profil Toko > Printer). */
+    fun listUsbPrinters(): List<String> = printerRepository.listUsbPrinters()
 
     /** @param name Nama printer yang dipilih pengguna dari [listPairedPrinters], atau null untuk
      * kembali ke perilaku default (pakai printer ter-pairing pertama). */
@@ -155,6 +158,14 @@ class StoreProfileViewModel @Inject constructor(
             _events.emit(
                 StoreProfileEvent.ShowMessage(if (name != null) "Printer struk diatur ke \"$name\"" else "Kembali memakai printer ter-pairing pertama")
             )
+        }
+    }
+
+    /** @param type "BLUETOOTH", "LAN", atau "USB". Dipanggil dari layar Pengaturan Printer. */
+    fun setPrinterConnection(type: String, lanIp: String, lanPort: Int, paperWidthMm: Float) {
+        viewModelScope.launch {
+            storeProfileRepository.setPrinterConfig(type, lanIp, lanPort, paperWidthMm)
+            _events.emit(StoreProfileEvent.ShowMessage("Pengaturan printer disimpan"))
         }
     }
 

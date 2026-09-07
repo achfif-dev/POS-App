@@ -15,6 +15,7 @@ import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
+import com.example.posapp.data.printer.toPrinterConfig
 import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.CustomerRepository
 import com.example.posapp.data.repository.ProductRepository
@@ -163,7 +164,7 @@ class PosViewModel @Inject constructor(
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
                     language = profile.receiptLanguage,
-                    printerName = profile.selectedPrinterName
+                    printerConfig = profile.toPrinterConfig()
                 )
             }
             when (result) {

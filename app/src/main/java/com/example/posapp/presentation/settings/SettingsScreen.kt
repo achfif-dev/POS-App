@@ -45,7 +45,10 @@ fun SettingsScreen(
     onOpenCloudSync: () -> Unit = {},
     onOpenMultiOutlet: () -> Unit = {},
     onOpenAuditLog: () -> Unit = {},
-    onOpenSuppliers: () -> Unit = {}
+    onOpenSuppliers: () -> Unit = {},
+    onOpenPaymentGateway: () -> Unit = {},
+    onOpenLicense: () -> Unit = {},
+    onOpenOutletStockCheck: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
@@ -185,6 +188,31 @@ fun SettingsScreen(
                     label = "Ringkasan Semua Cabang",
                     description = "Lihat gabungan omzet semua cabang yang sudah sinkron",
                     onClick = onOpenMultiOutlet
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.Storefront,
+                    label = "Cek Stok Semua Cabang",
+                    description = "Lihat stok & harga cabang lain secara realtime (read-only)",
+                    onClick = onOpenOutletStockCheck
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SettingsSection(title = "Pembayaran & Lisensi") {
+                SettingsNavRow(
+                    icon = Icons.Default.Sync,
+                    label = "Payment Gateway (QRIS Otomatis)",
+                    description = "Hubungkan akun Midtrans toko sendiri untuk konfirmasi QRIS otomatis",
+                    onClick = onOpenPaymentGateway
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.Receipt,
+                    label = "Status Lisensi Aplikasi",
+                    description = "Lihat masa berlaku & perbarui aktivasi lisensi",
+                    onClick = onOpenLicense
                 )
             }
 
