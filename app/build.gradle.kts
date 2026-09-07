@@ -195,6 +195,16 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
+    // Cloud Functions callable — dipakai LicenseRepository, PaymentGatewayRepository (Fase 5-6)
+    // untuk memanggil backend tanpa menanam kredensial/rahasia apa pun di dalam APK.
+    implementation("com.google.firebase:firebase-functions-ktx")
+
+    // WorkManager + Hilt — penjadwalan tugas latar belakang oportunistik (hanya jalan saat ada
+    // internet, lihat Constraints.NETWORK_TYPE_CONNECTED): revalidasi lisensi diam-diam
+    // (LicenseSyncWorker) & sinkronisasi katalog produk/stok lintas cabang (OutletCatalogSyncWorker).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    ksp("androidx.hilt:hilt-compiler:1.2.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2") // termasuk org.junit.rules.TemporaryFolder dipakai BackupCryptoTest
