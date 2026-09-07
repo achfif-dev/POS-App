@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  TEMUAN KEAMANAN (audit ulang): sebelumnya HANYA database Room yang dikecualikan dari backup.
+  File DataStore sistem lisensi (data/license/LicenseRepository.kt, disimpan di
+  filesDir/datastore/license.preferences_pb) tadinya IKUT TERBACKUP oleh Android Auto Backup
+  (cloud backup akun Google saat uninstall/reinstall, atau migrasi perangkat "Salin data HP
+  lama"). Itu artinya token lisensi + deviceId yang sudah teraktivasi bisa "digandakan" ke HP
+  lain lewat restore backup TANPA pernah menyentuh Cloud Function sama sekali — device kedua
+  langsung dianggap sah karena membawa deviceId yang identik dengan yang sudah terdaftar di
+  server. Sekarang dikecualikan sama seperti database.
+-->
 <full-backup-content>
     <exclude domain="database" path="pos_database" />
+    <exclude domain="file" path="datastore/license.preferences_pb" />
 </full-backup-content>

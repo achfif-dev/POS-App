@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  TEMUAN KEAMANAN (audit ulang) — lihat komentar lengkap di backup_rules.xml: file DataStore
+  lisensi HARUS dikecualikan dari KEDUA jalur, bukan cuma cloud-backup — device-transfer adalah
+  jalur migrasi HP baru lewat kabel/Wi-Fi Direct (Android 12+) yang PUNYA daftar exclude
+  terpisah dari cloud-backup, kalau cuma satu yang diisi maka jalur satunya tetap membocorkan
+  file lisensi ke device baru.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="database" path="pos_database" />
+        <exclude domain="file" path="datastore/license.preferences_pb" />
     </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="pos_database" />
+        <exclude domain="file" path="datastore/license.preferences_pb" />
+    </device-transfer>
 </data-extraction-rules>
