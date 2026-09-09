@@ -31,6 +31,13 @@ Upload file `google-services.json` yang barusan didownload ke folder **`app/`** 
 > `app/build.gradle.kts`) — kalau file belum ada, build tetap sukses dan fitur cloud sync
 > otomatis nonaktif (bukan error).
 
+> **Penting:** plugin `com.google.gms.google-services` yang memproses file ini HARUS sudah
+> terdaftar di `build.gradle.kts` (root project, bukan `app/build.gradle.kts`). Kalau repo ini
+> kamu dapat dari sebelum perbaikan ini ditambahkan, build akan gagal dengan error
+> `Plugin with id 'com.google.gms.google-services' not found` begitu `google-services.json`
+> di-upload — root `build.gradle.kts` sudah diperbaiki untuk mendaftarkan plugin ini di baris
+> `plugins { ... }`, jadi cukup pastikan repo kamu sudah pakai versi terbaru.
+
 ## 4. Aktifkan Firestore & Authentication
 
 Di Firebase Console, proyek yang tadi dibuat:
