@@ -83,9 +83,20 @@ class MainActivity : ComponentActivity() {
     // lagi -> minta PIN ulang. Ini dicek di onStart (bukan cuma dicatat di onStop) supaya
     // keputusan logout terjadi tepat saat app kembali terlihat, sebelum pengguna sempat
     // berinteraksi dengan layar yang seharusnya sudah terkunci.
+    //
+    // PERBAIKAN BUG: onStop() JUGA terpicu saat Activity di-destroy-lalu-recreate akibat
+    // perubahan KONFIGURASI (rotasi layar landscape<->portrait, resize multi-window/foldable,
+    // perubahan bahasa sistem, dsb) -- bukan cuma saat pengguna sungguh-sungguh meninggalkan
+    // app. Tanpa pengecekan ini, terlihat identik dengan Home/app-switch di mata
+    // AutoLockManager: kasir yang cuma memutar HP-nya langsung ke-logout paksa dan lempar ke
+    // layar Login, walau tidak pernah pindah ke mana-mana. isChangingConfigurations() true
+    // berarti onStop ini bagian dari siklus rotasi (Activity yang SAMA akan langsung
+    // di-recreate), jadi dilewati -- tidak dianggap "app di-background".
     override fun onStop() {
         super.onStop()
-        autoLockManager.onAppBackgrounded()
+        if (!isChangingConfigurations) {
+            autoLockManager.onAppBackgrounded()
+        }
     }
 
     override fun onStart() {
@@ -152,7 +163,21 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
     // berada di layar selain login/login_gate, paksa kembali ke layar login dan bersihkan
     // seluruh back stack — supaya tombol Back tidak bisa "menembus" ke layar yang tadinya
     // sudah dibuka sebelum terkunci.
-    LaunchedEffect(currentUser, currentBackStackEntry) {
+    //
+    // PERBAIKAN BUG: storeProfile WAJIB jadi key di sini, bukan cuma dibaca di dalam body.
+    // Skenario yang sebelumnya lolos: proses app dibunuh OS saat di-background (umum di HP
+    // RAM kecil) lalu dibuka lagi -> SessionManager baru (currentUser = null) dan
+    // StoreProfileViewModel.uiState mulai dari nilai default StoreProfile() (pinLoginEnabled
+    // = false) SEBELUM nilai asli dari DataStore selesai dimuat -- sementara back stack
+    // Navigation-Compose (mis. masih di layar Kasir/Produk) ikut ter-restore dari Bundle, jadi
+    // BUKAN mulai dari login_gate. Kalau storeProfile bukan key, LaunchedEffect ini sempat
+    // jalan sekali saat pinLoginEnabled masih default false (tidak redirect), lalu TIDAK
+    // PERNAH jalan ulang ketika nilai asli (true) selesai dimuat -- karena currentUser &
+    // currentBackStackEntry tidak ikut berubah. Hasilnya: layar lama tetap tampil dengan sesi
+    // null tanpa pernah diarahkan ke Login, ViewModel-nya pun jalan tanpa data sesi -> layar
+    // kosong/putih. Dengan storeProfile sebagai key, begitu nilai asli pinLoginEnabled masuk,
+    // effect ini otomatis jalan ulang dan langsung redirect.
+    LaunchedEffect(currentUser, currentBackStackEntry, storeProfile) {
         val route = currentBackStackEntry?.destination?.route
         val onAuthScreen = route == "login" || route == "login_gate" || route == "onboarding" || route == null
         if (currentUser == null && storeProfile.pinLoginEnabled && !onAuthScreen) {
