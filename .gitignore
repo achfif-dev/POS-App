@@ -1,0 +1,35 @@
+# Android / Gradle
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Kredensial & kunci rahasia — JANGAN PERNAH commit
+license_private_key.pem
+license_public_key_base64.txt
+functions/license_private_key.pem
+functions/license_public_key_base64.txt
+service-account.json
+functions/service-account.json
+release-keystore.jks
+keystore-info.txt
+*.keystore
+*.jks
+
+# Node
+node_modules/
+functions/node_modules/
+npm-debug.log*
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
