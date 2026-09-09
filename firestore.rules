@@ -51,7 +51,7 @@ service cloud.firestore {
 
     // Lisensi aplikasi & kredensial payment gateway toko — RAHASIA PENUH. Tidak boleh
     // dibaca/ditulis langsung oleh client sama sekali dalam kondisi apa pun. Satu-satunya jalan
-    // masuk/keluar adalah Cloud Functions (activateLicense, revalidateLicense,
+    // masuk/keluar adalah Cloud Functions (activateLicense, checkLicenseStatus,
     // saveGatewayCredentials, createQrisCharge) yang jalan dengan Admin SDK dan otomatis
     // melewati rules ini. Kalau baris "allow read, write: if false" ini dihapus/dilonggarkan,
     // siapa pun yang tahu App ID Firebase publik bisa membaca Server Key Midtrans semua toko

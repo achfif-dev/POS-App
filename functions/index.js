@@ -47,15 +47,22 @@ function getPrivateKey() {
 
 /** Urutan field JSON di sini HARUS SAMA PERSIS dengan yang diharapkan LicenseCrypto.kt di app
  * (parsing pakai JSONObject biasa jadi urutan tidak masalah untuk PARSING, tapi HARUS konsisten
- * untuk VERIFIKASI TANDA TANGAN karena signature dihitung dari string JSON persis ini). */
-function buildCanonicalPayload({ licenseKey, deviceId, customerName, plan, issuedAt, validUntil }) {
+ * untuk VERIFIKASI TANDA TANGAN karena signature dihitung dari string JSON persis ini).
+ *
+ * TIDAK ADA `validUntil` — lisensi aplikasi ini SEKALI BAYAR (bukan langganan), jadi sertifikat
+ * aktivasi yang ditandatangani di sini berlaku SELAMANYA untuk kombinasi licenseKey+deviceId
+ * tersebut begitu diverifikasi sekali oleh app (lihat LicenseRepository.kt — tidak ada logika
+ * kedaluwarsa berbasis waktu sama sekali). Satu-satunya cara sertifikat ini berhenti berlaku
+ * adalah developer/penjual menonaktifkan lisensinya (`isActive: false`, lihat
+ * `checkLicenseStatus` & `scripts/issue-license.js --deactivate`) — itu pun baru diketahui app
+ * saat kebetulan online, TIDAK PERNAH memaksa koneksi internet berkala. */
+function buildCanonicalPayload({ licenseKey, deviceId, customerName, plan, issuedAt }) {
   return JSON.stringify({
     licenseKey,
     deviceId,
     customerName,
     plan,
     issuedAt,
-    validUntil,
   });
 }
 
@@ -65,8 +72,6 @@ function signPayload(payloadJson) {
   signer.end();
   return signer.sign(getPrivateKey()).toString("base64");
 }
-
-const VALIDITY_WINDOW_MILLIS = 30 * 24 * 60 * 60 * 1000; // 30 hari, samakan dengan LicenseRepository.kt
 
 /**
  * Dipanggil app saat pengguna menempelkan kode lisensi pertama kali (self-service, lihat
@@ -109,21 +114,29 @@ exports.activateLicense = onCall({ region: REGION, secrets: ["LICENSE_PRIVATE_KE
   });
 
   const now = Date.now();
+  // TIDAK ADA validUntil di sini — sekali sertifikat ini lolos verifikasi tanda tangan di app,
+  // berlaku SELAMANYA (lisensi sekali bayar, bukan langganan). Lihat komentar buildCanonicalPayload.
   const payload = {
     licenseKey,
     deviceId,
     customerName: result.customerName || "-",
     plan: result.plan || "standard",
     issuedAt: now,
-    validUntil: now + VALIDITY_WINDOW_MILLIS,
   };
   const payloadJson = buildCanonicalPayload(payload);
   return { payload: payloadJson, signature: signPayload(payloadJson) };
 });
 
-/** Dipanggil diam-diam oleh LicenseSyncWorker.kt setiap ada internet, memakai licenseKey yang
- * sudah tersimpan — memperpanjang validUntil tanpa pengguna perlu berbuat apa-apa. */
-exports.revalidateLicense = onCall({ region: REGION, secrets: ["LICENSE_PRIVATE_KEY"] }, async (request) => {
+/** Dipanggil OPSIONAL & OPORTUNISTIK oleh LicenseSyncWorker.kt setiap kebetulan ada internet —
+ * BUKAN untuk memperpanjang masa berlaku (tidak ada masa berlaku, lisensi ini permanen begitu
+ * aktivasi), tapi HANYA untuk mengecek apakah lisensi sempat dinonaktifkan penjual (refund,
+ * chargeback, terbukti bajakan, dst.) sejak aktivasi. Kalau device tidak pernah online lagi
+ * setelah aktivasi, lisensinya TETAP AKTIF selamanya di device itu — ini trade-off yang sengaja
+ * diambil supaya toko offline-first tidak pernah "terkunci" hanya karena jarang online, sama
+ * seperti filosofi fitur lain di app ini. Respons TIDAK ditandatangani (bukan sertifikat baru,
+ * cuma live-check boolean) — cukup untuk kasus ini karena penyerang yang bisa memalsukan respons
+ * ini juga bisa saja memilih untuk tetap offline selamanya, hasil akhirnya sama saja. */
+exports.checkLicenseStatus = onCall({ region: REGION }, async (request) => {
   const { licenseKey, deviceId } = request.data || {};
   if (!licenseKey || !deviceId) {
     throw new HttpsError("invalid-argument", "licenseKey dan deviceId wajib diisi.");
@@ -131,25 +144,11 @@ exports.revalidateLicense = onCall({ region: REGION, secrets: ["LICENSE_PRIVATE_
   const snap = await db.collection("licenses").doc(licenseKey).get();
   if (!snap.exists) throw new HttpsError("not-found", "Kode lisensi tidak ditemukan.");
   const data = snap.data();
-  if (data.isActive === false) {
-    throw new HttpsError("failed-precondition", "Lisensi ini sudah dinonaktifkan penjual.");
-  }
   const devices = data.devices || {};
   if (!Object.prototype.hasOwnProperty.call(devices, deviceId)) {
     throw new HttpsError("permission-denied", "Device ini belum pernah aktivasi untuk lisensi ini.");
   }
-
-  const now = Date.now();
-  const payload = {
-    licenseKey,
-    deviceId,
-    customerName: data.customerName || "-",
-    plan: data.plan || "standard",
-    issuedAt: now,
-    validUntil: now + VALIDITY_WINDOW_MILLIS,
-  };
-  const payloadJson = buildCanonicalPayload(payload);
-  return { payload: payloadJson, signature: signPayload(payloadJson) };
+  return { isActive: data.isActive !== false };
 });
 
 // ============================================================================================
