@@ -60,7 +60,12 @@ fun ReportScreen(
             val granted = androidx.core.content.ContextCompat.checkSelfPermission(
                 context, android.Manifest.permission.BLUETOOTH_CONNECT
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (granted) viewModel.printTransaction() else bluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+            if (granted) {
+                viewModel.printTransaction()
+            } else {
+                autoLockManager.expectExternalActivityReturn()
+                bluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+            }
         } else {
             viewModel.printTransaction()
         }
