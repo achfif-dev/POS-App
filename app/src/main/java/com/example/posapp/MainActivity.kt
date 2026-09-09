@@ -34,6 +34,7 @@ import com.example.posapp.presentation.customer.CustomerDetailScreen
 import com.example.posapp.presentation.customer.CustomerScreen
 import com.example.posapp.presentation.dashboard.DashboardScreen
 import com.example.posapp.presentation.expense.ExpenseScreen
+import com.example.posapp.presentation.onboarding.OnboardingScreen
 import com.example.posapp.presentation.pos.PosScreen
 import com.example.posapp.presentation.product.ProductScreen
 import com.example.posapp.presentation.report.ReportScreen
@@ -153,7 +154,7 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
     // sudah dibuka sebelum terkunci.
     LaunchedEffect(currentUser, currentBackStackEntry) {
         val route = currentBackStackEntry?.destination?.route
-        val onAuthScreen = route == "login" || route == "login_gate" || route == null
+        val onAuthScreen = route == "login" || route == "login_gate" || route == "onboarding" || route == null
         if (currentUser == null && storeProfile.pinLoginEnabled && !onAuthScreen) {
             navController.navigate("login") {
                 popUpTo(navController.graph.id) { inclusive = true }
@@ -178,18 +179,40 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
         }
     ) {
         composable("login_gate") {
-            // Gate login: tampilkan layar login jika belum ada user sama sekali (wajib setup
-            // admin pertama) ATAU jika fitur "Wajibkan Login PIN" aktif dan belum ada sesi login.
+            // Gate login: tampilkan Onboarding Wizard dulu kalau instalasi ini belum pernah
+            // menyelesaikan/melewatinya (SATU KALI seumur instal) — baru setelah itu, layar
+            // login jika belum ada user sama sekali (wajib setup admin pertama) ATAU jika fitur
+            // "Wajibkan Login PIN" aktif dan belum ada sesi login.
             val authGateViewModel: AuthGateViewModel = hiltViewModel()
             val requiresLogin by authGateViewModel.requiresLogin.collectAsState()
             val currentUser by sessionManager.currentUser.collectAsState()
-            androidx.compose.runtime.LaunchedEffect(requiresLogin, currentUser) {
+            androidx.compose.runtime.LaunchedEffect(requiresLogin, currentUser, storeProfile.onboardingCompleted) {
                 val needsLogin = requiresLogin ?: return@LaunchedEffect // masih memuat, tunggu
-                val target = if (needsLogin && currentUser == null) "login" else "dashboard"
+                val target = when {
+                    !storeProfile.onboardingCompleted -> "onboarding"
+                    needsLogin && currentUser == null -> "login"
+                    else -> "dashboard"
+                }
                 navController.navigate(target) {
                     popUpTo("login_gate") { inclusive = true }
                 }
             }
+        }
+        composable("onboarding") {
+            // Setelah wizard selesai/dilewati, lanjutkan ke tujuan yang sama seperti login_gate
+            // akan tentukan (login kalau masih perlu setup admin/PIN, atau langsung dashboard).
+            val authGateViewModel: AuthGateViewModel = hiltViewModel()
+            val requiresLogin by authGateViewModel.requiresLogin.collectAsState()
+            val currentUser by sessionManager.currentUser.collectAsState()
+            OnboardingScreen(
+                onFinished = {
+                    val needsLogin = requiresLogin ?: true
+                    val target = if (needsLogin && currentUser == null) "login" else "dashboard"
+                    navController.navigate(target) {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
         }
         composable("login") {
             LoginScreen(onLoginSuccess = {

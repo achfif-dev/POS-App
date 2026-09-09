@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
@@ -24,8 +26,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.posapp.data.license.LicenseState
@@ -181,7 +190,7 @@ fun DashboardScreen(
                     Text("Tren Omzet 7 Hari Terakhir", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
                 item {
-                    RevenueTrendChart(uiState.revenueTrend)
+                    RevenueTrendChart(trend = uiState.revenueTrend, changePercent = uiState.revenueTrendChangePercent)
                 }
             }
 
@@ -350,62 +359,127 @@ private fun SummaryCard(
     }
 }
 
-/** Grafik batang mini omzet 7 hari terakhir, digambar langsung dengan Canvas (tanpa library chart). */
+/**
+ * Grafik garis tren omzet 7 hari terakhir (garis + area gradasi + titik per hari), digambar
+ * langsung dengan Canvas (tanpa menambah library chart eksternal — konsisten dengan pendekatan
+ * chart lain di app ini). [changePercent] menampilkan badge naik/turun dibanding 7 hari sebelum
+ * periode ini, kalau tersedia (null kalau tidak ada data pembanding).
+ */
 @Composable
-private fun RevenueTrendChart(trend: List<DayRevenue>) {
-    val barColor = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+private fun RevenueTrendChart(trend: List<DayRevenue>, changePercent: Double?) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val fillColorTop = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    val fillColorBottom = MaterialTheme.colorScheme.primary.copy(alpha = 0f)
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
     val maxRevenue = (trend.maxOfOrNull { it.revenue } ?: 0.0).coerceAtLeast(1.0)
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().height(120.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                trend.forEach { day ->
-                    val fraction = (day.revenue / maxRevenue).toFloat().coerceIn(0f, 1f)
-                    Column(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Bottom
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .width(18.dp)
-                                .fillMaxHeight(),
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            Canvas(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
-                                val barHeight = size.height * fraction
-                                // trek belakang (menunjukkan tinggi maksimum area grafik)
-                                drawRoundRect(
-                                    color = trackColor,
-                                    topLeft = Offset(0f, 0f),
-                                    size = androidx.compose.ui.geometry.Size(size.width, size.height),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-                                )
-                                drawRoundRect(
-                                    color = barColor,
-                                    topLeft = Offset(0f, size.height - barHeight),
-                                    size = androidx.compose.ui.geometry.Size(size.width, barHeight.coerceAtLeast(4f)),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(day.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                Text(
+                    "Tertinggi: ${rupiah.format(maxRevenue)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (changePercent != null) {
+                    TrendChangeBadge(changePercent)
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Tertinggi: ${rupiah.format(maxRevenue)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(Modifier.height(12.dp))
+            Canvas(modifier = Modifier.fillMaxWidth().height(110.dp)) {
+                if (trend.size < 2) return@Canvas
+                val stepX = size.width / (trend.size - 1)
+                val points = trend.mapIndexed { index, day ->
+                    val fraction = (day.revenue / maxRevenue).toFloat().coerceIn(0f, 1f)
+                    Offset(index * stepX, size.height - size.height * fraction)
+                }
+
+                // Garis dasar (baseline Rp0), referensi visual bawah grafik.
+                drawLine(
+                    color = gridColor,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 2f
+                )
+
+                // Area gradasi di bawah garis tren.
+                val areaPath = Path().apply {
+                    moveTo(points.first().x, size.height)
+                    points.forEach { lineTo(it.x, it.y) }
+                    lineTo(points.last().x, size.height)
+                    close()
+                }
+                drawPath(
+                    path = areaPath,
+                    brush = Brush.verticalGradient(listOf(fillColorTop, fillColorBottom))
+                )
+
+                // Garis tren utama.
+                val linePath = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    points.drop(1).forEach { lineTo(it.x, it.y) }
+                }
+                drawPath(
+                    path = linePath,
+                    color = lineColor,
+                    style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+
+                // Titik per hari, hari terakhir (hari ini) ditandai lebih besar.
+                points.forEachIndexed { index, point ->
+                    drawCircle(
+                        color = lineColor,
+                        radius = if (index == points.lastIndex) 6f else 4f,
+                        center = point
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                trend.forEach { day ->
+                    Text(
+                        day.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
         }
+    }
+}
+
+/** Badge kecil "+12,5% vs minggu lalu" / "-8,0% vs minggu lalu" di pojok kartu grafik tren. */
+@Composable
+private fun TrendChangeBadge(changePercent: Double) {
+    val isUp = changePercent >= 0
+    val color = if (isUp) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (isUp) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        val sign = if (isUp) "+" else ""
+        Text(
+            "$sign${"%.1f".format(changePercent)}% vs minggu lalu",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

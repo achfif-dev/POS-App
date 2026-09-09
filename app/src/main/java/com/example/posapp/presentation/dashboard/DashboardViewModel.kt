@@ -29,6 +29,10 @@ data class DashboardUiState(
     val topProducts: List<TopSellingItem> = emptyList(),
     val lowStockCount: Int = 0,
     val revenueTrend: List<DayRevenue> = emptyList(),
+    /** Persentase perubahan total omzet 7 hari terakhir dibanding 7 hari SEBELUM itu (mis. 12.5
+     * = naik 12.5%, -8.0 = turun 8%). Null kalau periode sebelumnya tidak ada omzet sama sekali
+     * (pembagi nol) — badge tren disembunyikan pada kondisi ini. */
+    val revenueTrendChangePercent: Double? = null,
     val isAdmin: Boolean = true,
     // Menu "Produk" (termasuk harga beli/margin) — ADMIN & MANAGER, KASIR ditolak. Sebelumnya
     // menu ini tampil untuk semua role tanpa syarat (audit 2026-09-06).
@@ -90,8 +94,28 @@ class DashboardViewModel @Inject constructor(
             todayGrossProfit = summary.totalGrossProfit,
             topProducts = top,
             revenueTrend = trend,
+            revenueTrendChangePercent = trendChangePercent(trend),
             isLoading = false
         )
+    }
+
+    /** Bandingkan total omzet 7 hari (yang sudah dimuat di [trend]) terhadap total omzet 7 hari
+     * SEBELUM periode itu, untuk badge naik/turun di atas grafik tren Dashboard. */
+    private suspend fun trendChangePercent(trend: List<DayRevenue>): Double? {
+        if (trend.isEmpty()) return null
+        val currentTotal = trend.sumOf { it.revenue }
+        val cal = Calendar.getInstance()
+        cal.time = trend.first().date
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        val currentPeriodStart = cal.timeInMillis
+        cal.add(Calendar.DAY_OF_MONTH, -trend.size)
+        val previousPeriodStart = cal.timeInMillis
+        val previousPeriodEnd = currentPeriodStart - 1
+        val previousSummary = transactionRepository.getSalesSummary(previousPeriodStart, previousPeriodEnd)
+        val previousTotal = previousSummary.totalRevenue
+        if (previousTotal <= 0.0) return null
+        return ((currentTotal - previousTotal) / previousTotal) * 100.0
     }
 
     /** Omzet 7 hari terakhir (termasuk hari ini), untuk grafik tren mini di Dashboard. */
