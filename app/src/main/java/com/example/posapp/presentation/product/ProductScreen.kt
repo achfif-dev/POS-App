@@ -316,7 +316,17 @@ private fun ProductFormDialog(
     fun requestCameraCapture() {
         val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
-        if (hasPermission) launchCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        if (hasPermission) {
+            launchCamera()
+        } else {
+            // PERBAIKAN BUG: dialog izin runtime (GrantPermissionsActivity) juga memicu
+            // onStop/onStart MainActivity di banyak perangkat, sama seperti benar-benar
+            // membuka app kamera -- tanpa expectExternalActivityReturn() di sini, percobaan
+            // PERTAMA kali memotret produk (sebelum izin kamera pernah diberikan) langsung
+            // kena auto-lock dan lempar ke Login begitu dialog izin ditutup.
+            autoLockManager.expectExternalActivityReturn()
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
