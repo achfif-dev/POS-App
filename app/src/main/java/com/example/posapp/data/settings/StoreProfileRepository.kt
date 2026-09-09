@@ -71,7 +71,11 @@ data class StoreProfile(
     /** Aktifkan input nomor meja/nama pemesan di kasir — relevan untuk mode Restoran/Kafe. */
     val tableTaggingEnabled: Boolean = false,
     /** Aktifkan modul Pemasok & draf Pesanan Pembelian dari daftar stok tipis. */
-    val supplierPoEnabled: Boolean = false
+    val supplierPoEnabled: Boolean = false,
+    /** Sudah menyelesaikan (atau melewati) Onboarding Wizard saat instal pertama kali —
+     * dipakai MainActivity untuk menampilkan wizard itu HANYA sekali seumur instalasi.
+     * Default false supaya instalasi baru (DataStore masih kosong) selalu melihatnya. */
+    val onboardingCompleted: Boolean = false
 )
 
 /**
@@ -120,6 +124,7 @@ class StoreProfileRepository @Inject constructor(
         val WHATSAPP_RECEIPT_ENABLED = booleanPreferencesKey("whatsapp_receipt_enabled")
         val TABLE_TAGGING_ENABLED = booleanPreferencesKey("table_tagging_enabled")
         val SUPPLIER_PO_ENABLED = booleanPreferencesKey("supplier_po_enabled")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -153,7 +158,8 @@ class StoreProfileRepository @Inject constructor(
             loyaltyPointValueRupiah = prefs[Keys.LOYALTY_POINT_VALUE_RUPIAH] ?: 100L,
             whatsappReceiptEnabled = prefs[Keys.WHATSAPP_RECEIPT_ENABLED] ?: true,
             tableTaggingEnabled = prefs[Keys.TABLE_TAGGING_ENABLED] ?: false,
-            supplierPoEnabled = prefs[Keys.SUPPLIER_PO_ENABLED] ?: false
+            supplierPoEnabled = prefs[Keys.SUPPLIER_PO_ENABLED] ?: false,
+            onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false
         )
     }
 
@@ -291,5 +297,37 @@ class StoreProfileRepository @Inject constructor(
 
     suspend fun setSupplierPoEnabled(enabled: Boolean) {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.SUPPLIER_PO_ENABLED] = enabled }
+    }
+
+    /**
+     * Simpan seluruh pilihan Onboarding Wizard (Data Toko, Warna Brand, Jenis Usaha, Pajak)
+     * dalam SATU transaksi DataStore, lalu tandai [onboardingCompleted] = true supaya wizard
+     * tidak muncul lagi di sesi berikutnya. Dipanggil dari langkah terakhir wizard ("Selesai").
+     */
+    suspend fun completeOnboarding(
+        name: String,
+        address: String,
+        phone: String,
+        businessType: String,
+        appColorHex: String?,
+        taxEnabled: Boolean,
+        taxPercent: Double
+    ) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.NAME] = name.trim().ifBlank { "Toko Saya" }
+            prefs[Keys.ADDRESS] = address
+            prefs[Keys.PHONE] = phone
+            prefs[Keys.BUSINESS_TYPE] = businessType
+            if (appColorHex == null) prefs.remove(Keys.APP_COLOR_HEX) else prefs[Keys.APP_COLOR_HEX] = appColorHex
+            prefs[Keys.TAX_ENABLED] = taxEnabled
+            prefs[Keys.TAX_PERCENT] = taxPercent
+            prefs[Keys.ONBOARDING_COMPLETED] = true
+        }
+    }
+
+    /** Lewati wizard tanpa mengubah profil toko apa pun — tetap ditandai selesai supaya tidak
+     * muncul lagi tiap kali app dibuka. */
+    suspend fun skipOnboarding() {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.ONBOARDING_COMPLETED] = true }
     }
 }
