@@ -56,6 +56,7 @@ fun BarcodeScannerScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -67,8 +68,15 @@ fun BarcodeScannerScreen(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
 
+    // PERBAIKAN BUG: sama seperti di ProductScreen -- dialog izin runtime bisa memicu
+    // onStop/onStart MainActivity, jadi WAJIB expectExternalActivityReturn() sebelum
+    // memintanya, baik saat auto-request pertama kali layar ini dibuka maupun saat pengguna
+    // menekan tombol "Berikan Izin Kamera" secara manual di bawah.
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (!hasCameraPermission) {
+            autoLockManager.expectExternalActivityReturn()
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -203,7 +211,10 @@ fun BarcodeScannerScreen(
                 Spacer(Modifier.height(16.dp))
                 Text("Izin kamera diperlukan untuk scan barcode", color = Color.White)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Button(onClick = {
+                    autoLockManager.expectExternalActivityReturn()
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                }) {
                     Text("Berikan Izin Kamera")
                 }
             }
