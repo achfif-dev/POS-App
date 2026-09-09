@@ -15,10 +15,16 @@ import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * Revalidasi lisensi diam-diam setiap kali device kebetulan online, supaya masa berlaku token
- * (30 hari, lihat [LicenseRepository.VALIDITY_WINDOW_MILLIS]) terus otomatis diperpanjang TANPA
- * pengguna perlu buka layar Aktivasi Lisensi lagi. Kalau tidak ada internet, WorkManager cukup
- * menunda sampai constraint NETWORK_TYPE_CONNECTED terpenuhi — tidak pernah mengganggu app.
+ * Lisensi ini SEKALI BAYAR, bukan langganan — tidak ada apa pun yang perlu "diperpanjang". Worker
+ * ini murni OPORTUNISTIK: setiap kali device kebetulan online, cek diam-diam lewat
+ * [LicenseRepository.checkStatus] apakah penjual/developer sempat menonaktifkan lisensi yang
+ * sudah aktif di device ini (refund/chargeback/bajakan) — TIDAK PERNAH menandatangani ulang atau
+ * memperbarui masa berlaku apa pun, karena tidak ada masa berlaku yang perlu diperbarui.
+ *
+ * SENGAJA `Result.success()` untuk kegagalan (offline, dsb.), BUKAN `Result.retry()` — device
+ * yang jarang/tidak pernah online lagi setelah aktivasi TETAP dianggap berlisensi sah selamanya
+ * (lihat filosofi fail-open di [LicenseRepository.checkStatus]), jadi tidak ada gunanya membuat
+ * WorkManager retry berulang-ulang untuk sesuatu yang bukan syarat app tetap berjalan.
  */
 @HiltWorker
 class LicenseSyncWorker @AssistedInject constructor(
@@ -31,16 +37,15 @@ class LicenseSyncWorker @AssistedInject constructor(
         val hasLicense = licenseRepository.state.first().licenseKey != null
         if (!hasLicense) return Result.success()
 
-        return when (val result = licenseRepository.revalidate()) {
-            is LicenseActivationResult.Success -> Result.success()
-            // Retry otomatis (backoff bawaan WorkManager) — biasanya karena sedang offline
-            // walau constraint NETWORK_TYPE_CONNECTED terpenuhi sesaat lalu putus lagi.
-            is LicenseActivationResult.Error -> Result.retry()
-        }
+        // Hasil (sukses ATAU error/offline) sama-sama Result.success() di sini — lihat catatan
+        // fail-open di dokumentasi kelas ini. checkStatus() sendiri yang menjamin status
+        // tersimpan tidak pernah berubah kalau panggilan ini gagal.
+        licenseRepository.checkStatus()
+        return Result.success()
     }
 
     companion object {
-        private const val UNIQUE_WORK_NAME = "license_revalidation"
+        private const val UNIQUE_WORK_NAME = "license_status_check"
 
         /** Panggil sekali dari Application.onCreate — aman dipanggil berkali-kali (idempotent). */
         fun schedule(context: Context) {

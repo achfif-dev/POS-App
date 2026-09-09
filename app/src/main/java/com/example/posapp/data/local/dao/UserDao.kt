@@ -19,6 +19,11 @@ interface UserDao {
     @Query("SELECT COUNT(*) FROM users WHERE isActive = 1")
     suspend fun countActive(): Int
 
+    // Dipakai UserRepository.deleteUser sebagai jaring pengaman terakhir supaya toko tidak
+    // pernah kehilangan akses Admin sama sekali (lihat catatan lengkap di UserRepository).
+    @Query("SELECT COUNT(*) FROM users WHERE isActive = 1 AND role = 'ADMIN'")
+    suspend fun countActiveAdmins(): Int
+
     @Insert
     suspend fun insert(user: UserEntity): Long
 

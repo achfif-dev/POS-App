@@ -2,6 +2,7 @@ package com.example.posapp.data.license
 
 import android.content.Context
 import android.provider.Settings
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,27 +25,33 @@ private val Context.licenseDataStore by preferencesDataStore(name = "license")
  * app (lihat LicenseActivationScreen) — pelanggan cukup menempelkan kode lisensi yang dikirim
  * developer setelah pembelian, TANPA perlu developer login/setting manual ke device pelanggan.
  *
- * Alur:
+ * LISENSI INI SEKALI BAYAR, BUKAN LANGGANAN — tidak ada tanggal kedaluwarsa sama sekali:
  * 1. Aktivasi PERTAMA KALI wajib online: [activate] memanggil Cloud Function `activateLicense`,
  *    yang mengikat licenseKey ke [deviceId] device ini (fail kalau key sudah dipakai device lain
- *    dan melebihi maxDevices — lihat functions/index.js) dan mengembalikan token bertanda tangan
- *    RSA (lihat [LicenseCrypto]) yang valid untuk [VALIDITY_WINDOW_MILLIS] ke depan.
- * 2. Setelah itu app 100% bisa jalan OFFLINE — status dihitung lokal dari token tersimpan.
- * 3. [LicenseSyncWorker] mencoba [revalidate] secara oportunistik (kalau ada internet) untuk
- *    memperpanjang masa berlaku token secara diam-diam, sebelum [LicenseState.validUntil] habis.
- * 4. Kalau device offline lebih lama dari [VALIDITY_WINDOW_MILLIS] + [GRACE_PERIOD_MILLIS],
- *    status jadi EXPIRED dan app minta koneksi internet untuk revalidasi ulang.
+ *    dan melebihi maxDevices — lihat functions/index.js) dan mengembalikan sertifikat bertanda
+ *    tangan RSA (lihat [LicenseCrypto]) yang berlaku SELAMANYA untuk device ini.
+ * 2. Setelah itu app 100% bisa jalan OFFLINE SELAMANYA — status dihitung lokal dari sertifikat
+ *    tersimpan, tidak ada jam pasir yang berjalan sama sekali.
+ * 3. [LicenseSyncWorker] sesekali memanggil [checkStatus] SECARA OPORTUNISTIK (hanya kalau ada
+ *    internet) — BUKAN untuk memperpanjang apa pun (tidak ada yang perlu diperpanjang), murni
+ *    untuk mendeteksi kalau penjual menonaktifkan lisensi ini (refund/chargeback/bajakan). Kalau
+ *    device tidak pernah online lagi setelah aktivasi, lisensi TETAP AKTIF selamanya — trade-off
+ *    yang sengaja diambil demi filosofi offline-first app ini.
  */
 @Singleton
 class LicenseRepository @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     companion object {
-        /** Lama token dianggap ACTIVE sejak diterbitkan server tanpa perlu online lagi. */
-        const val VALIDITY_WINDOW_MILLIS = 30L * 24 * 60 * 60 * 1000 // 30 hari
-        /** Tambahan waktu setelah [VALIDITY_WINDOW_MILLIS] habis di mana app TETAP jalan penuh
-         * (hanya menampilkan pengingat) — mengakomodasi toko yang jarang online. */
-        const val GRACE_PERIOD_MILLIS = 14L * 24 * 60 * 60 * 1000 // 14 hari tambahan
+        /** Masa coba gratis SEBELUM aktivasi apa pun diwajibkan, dihitung sejak app pertama kali
+         * dibuka di device ini ([KEY_FIRST_LAUNCH_AT]). Selama masa ini SEMUA fitur (termasuk
+         * fitur prioritas) jalan penuh tanpa lisensi — supaya pengguna baru bisa merasakan
+         * fiturnya dulu. Setelah lewat, aplikasi tidak diblokir; hanya fitur prioritas yang
+         * dikunci sampai aktivasi (lihat [LicenseState.hasPremiumAccess]). Ini SATU-SATUNYA
+         * konsep berbasis waktu di seluruh sistem lisensi — begitu aktivasi berhasil, tidak ada
+         * jam pasir lain yang berjalan (lisensi sekali bayar, bukan langganan).
+         */
+        const val TRIAL_PERIOD_MILLIS = 15L * 24 * 60 * 60 * 1000 // 15 hari
 
         private val KEY_LICENSE_KEY = stringPreferencesKey("license_key")
         private val KEY_DEVICE_ID = stringPreferencesKey("device_id")
@@ -52,8 +59,10 @@ class LicenseRepository @Inject constructor(
         private val KEY_PLAN = stringPreferencesKey("plan")
         private val KEY_PAYLOAD_JSON = stringPreferencesKey("payload_json")
         private val KEY_SIGNATURE = stringPreferencesKey("signature")
-        private val KEY_VALID_UNTIL = longPreferencesKey("valid_until")
-        private val KEY_LAST_VALIDATED_AT = longPreferencesKey("last_validated_at")
+        private val KEY_ACTIVATED_AT = longPreferencesKey("activated_at")
+        private val KEY_LAST_CHECKED_AT = longPreferencesKey("last_checked_at")
+        private val KEY_REVOKED = booleanPreferencesKey("revoked")
+        private val KEY_FIRST_LAUNCH_AT = longPreferencesKey("first_launch_at")
     }
 
     private val functions: FirebaseFunctions by lazy { FirebaseFunctions.getInstance("asia-southeast2") }
@@ -75,6 +84,17 @@ class LicenseRepository @Inject constructor(
         return generated
     }
 
+    /** Dipanggil sekali dari `PosApplication.onCreate` — mencatat kapan app ini PERTAMA KALI
+     * dibuka di device ini, jadi jam pasir masa coba [TRIAL_PERIOD_MILLIS] mulai berjalan sejak
+     * device benar-benar mulai dipakai (bukan sejak APK di-build). Idempotent: hanya menulis
+     * kalau belum pernah tercatat sebelumnya. */
+    suspend fun ensureFirstLaunchRecorded() {
+        val prefs = context.licenseDataStore.data.first()
+        if (prefs[KEY_FIRST_LAUNCH_AT] == null) {
+            context.licenseDataStore.edit { it[KEY_FIRST_LAUNCH_AT] = System.currentTimeMillis() }
+        }
+    }
+
     val state: Flow<LicenseState> = context.licenseDataStore.data.map { prefs ->
         computeState(
             licenseKey = prefs[KEY_LICENSE_KEY],
@@ -82,10 +102,24 @@ class LicenseRepository @Inject constructor(
             plan = prefs[KEY_PLAN],
             payloadJson = prefs[KEY_PAYLOAD_JSON],
             signature = prefs[KEY_SIGNATURE],
-            validUntil = prefs[KEY_VALID_UNTIL],
-            lastValidatedAt = prefs[KEY_LAST_VALIDATED_AT],
+            activatedAt = prefs[KEY_ACTIVATED_AT],
+            lastCheckedAt = prefs[KEY_LAST_CHECKED_AT],
+            revoked = prefs[KEY_REVOKED] ?: false,
+            firstLaunchAt = prefs[KEY_FIRST_LAUNCH_AT],
             lastError = null,
         )
+    }
+
+    private fun trialState(firstLaunchAt: Long?, lastError: String?): LicenseState {
+        // Belum pernah aktivasi (atau sertifikat tersimpan rusak/kosong sebagian) — bukan berarti
+        // langsung terkunci: beri masa coba TRIAL_PERIOD_MILLIS dulu sejak pertama kali app ini
+        // dibuka. `firstLaunchAt` seharusnya selalu sudah ada (diisi `ensureFirstLaunchRecorded`
+        // di Application.onCreate sebelum UI mana pun sempat terbaca), tapi kalau karena race
+        // tipis ternyata belum, anggap trial baru saja mulai (fail-open ke arah menguntungkan
+        // pengguna, bukan fail-closed) alih-alih menganggapnya sudah kedaluwarsa.
+        val trialEndsAt = (firstLaunchAt ?: System.currentTimeMillis()) + TRIAL_PERIOD_MILLIS
+        val status = if (System.currentTimeMillis() <= trialEndsAt) LicenseStatus.TRIAL else LicenseStatus.TRIAL_EXPIRED
+        return LicenseState(status = status, trialEndsAt = trialEndsAt, lastError = lastError)
     }
 
     private fun computeState(
@@ -94,48 +128,41 @@ class LicenseRepository @Inject constructor(
         plan: String?,
         payloadJson: String?,
         signature: String?,
-        validUntil: Long?,
-        lastValidatedAt: Long?,
+        activatedAt: Long?,
+        lastCheckedAt: Long?,
+        revoked: Boolean,
+        firstLaunchAt: Long?,
         lastError: String?,
     ): LicenseState {
-        if (licenseKey == null || payloadJson == null || signature == null || validUntil == null) {
-            return LicenseState(status = LicenseStatus.NOT_ACTIVATED, lastError = lastError)
+        if (licenseKey == null || payloadJson == null || signature == null) {
+            return trialState(firstLaunchAt, lastError)
         }
         // Verifikasi ulang tanda tangan SETIAP kali dibaca (bukan cuma saat aktivasi) — mencegah
-        // seseorang mengedit nilai validUntil di file DataStore secara manual (root/backup restore)
-        // untuk memperpanjang masa aktif tanpa token yang sah dari server.
+        // seseorang mengedit nilai di file DataStore secara manual (root/backup restore) untuk
+        // memalsukan aktivasi tanpa sertifikat yang sah dari server.
         if (!LicenseCrypto.verify(payloadJson, signature)) {
-            return LicenseState(status = LicenseStatus.NOT_ACTIVATED, lastError = "Token lisensi tidak valid, aktivasi ulang diperlukan.")
+            // Sertifikat rusak/dipalsukan -> perlakukan seperti belum pernah aktivasi (jatuh ke
+            // TRIAL/TRIAL_EXPIRED sesuai firstLaunchAt), bukan status tersendiri, supaya toko
+            // yang sah tapi kebetulan trial-nya masih jalan tidak ikut ter-lock oleh error ini.
+            return trialState(firstLaunchAt, "Sertifikat lisensi tidak valid, aktivasi ulang diperlukan.")
         }
-        val now = System.currentTimeMillis()
-        val status = when {
-            now <= validUntil -> LicenseStatus.ACTIVE
-            now <= validUntil + GRACE_PERIOD_MILLIS -> LicenseStatus.GRACE_PERIOD
-            else -> LicenseStatus.EXPIRED
-        }
+        // TIDAK ADA pengecekan tanggal di sini — sertifikat yang lolos verifikasi tanda tangan
+        // berlaku SELAMANYA (lisensi sekali bayar). Satu-satunya jalan keluar dari ACTIVE adalah
+        // flag `revoked` lokal, yang HANYA bisa diisi true oleh [checkStatus] saat online (lihat
+        // di bawah) — tidak pernah oleh berlalunya waktu.
+        val status = if (revoked) LicenseStatus.REVOKED else LicenseStatus.ACTIVE
         return LicenseState(
             status = status,
             licenseKey = licenseKey,
             customerName = customerName,
             plan = plan,
-            validUntil = validUntil,
-            lastValidatedAt = lastValidatedAt,
+            activatedAt = activatedAt,
+            lastCheckedAt = lastCheckedAt,
             lastError = lastError,
         )
     }
 
-    suspend fun activate(licenseKey: String): LicenseActivationResult =
-        callActivationFunction("activateLicense", licenseKey)
-
-    /** Dipanggil diam-diam oleh [LicenseSyncWorker] atau saat app dibuka dan online, memakai
-     * licenseKey yang sudah tersimpan — tidak minta pengguna mengetik ulang apa pun. */
-    suspend fun revalidate(): LicenseActivationResult {
-        val current = context.licenseDataStore.data.first()[KEY_LICENSE_KEY]
-            ?: return LicenseActivationResult.Error("Belum ada lisensi yang teraktivasi di device ini.")
-        return callActivationFunction("revalidateLicense", current)
-    }
-
-    private suspend fun callActivationFunction(functionName: String, licenseKey: String): LicenseActivationResult {
+    suspend fun activate(licenseKey: String): LicenseActivationResult {
         val trimmedKey = licenseKey.trim()
         if (trimmedKey.isBlank()) return LicenseActivationResult.Error("Kode lisensi tidak boleh kosong.")
         val devId = deviceId()
@@ -145,7 +172,7 @@ class LicenseRepository @Inject constructor(
                 "deviceId" to devId,
                 "deviceModel" to (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL),
             )
-            val result = functions.getHttpsCallable(functionName).call(data).await()
+            val result = functions.getHttpsCallable("activateLicense").call(data).await()
             @Suppress("UNCHECKED_CAST")
             val map = result.data as? Map<String, Any?>
                 ?: return LicenseActivationResult.Error("Respons server tidak valid.")
@@ -156,7 +183,7 @@ class LicenseRepository @Inject constructor(
             }
             if (!LicenseCrypto.verify(payloadJson, signature)) {
                 return LicenseActivationResult.Error(
-                    "Tanda tangan token dari server tidak valid. Pastikan public key di " +
+                    "Tanda tangan sertifikat dari server tidak valid. Pastikan public key di " +
                         "LicenseCrypto.kt sudah sesuai dengan private key yang dipakai backend."
                 )
             }
@@ -168,16 +195,64 @@ class LicenseRepository @Inject constructor(
                 prefs[KEY_PLAN] = payload.plan
                 prefs[KEY_PAYLOAD_JSON] = payloadJson
                 prefs[KEY_SIGNATURE] = signature
-                prefs[KEY_VALID_UNTIL] = payload.validUntil
-                prefs[KEY_LAST_VALIDATED_AT] = System.currentTimeMillis()
+                prefs[KEY_ACTIVATED_AT] = payload.issuedAt
+                prefs[KEY_LAST_CHECKED_AT] = System.currentTimeMillis()
+                prefs[KEY_REVOKED] = false
             }
             LicenseActivationResult.Success(
                 computeState(
-                    trimmedKey, payload.customerName, payload.plan, payloadJson, signature,
-                    payload.validUntil, System.currentTimeMillis(), null,
+                    licenseKey = trimmedKey, customerName = payload.customerName, plan = payload.plan,
+                    payloadJson = payloadJson, signature = signature, activatedAt = payload.issuedAt,
+                    lastCheckedAt = System.currentTimeMillis(), revoked = false, firstLaunchAt = null,
+                    lastError = null,
                 )
             )
         } catch (e: FirebaseFunctionsException) {
+            LicenseActivationResult.Error(mapFunctionsError(e))
+        } catch (e: Exception) {
+            LicenseActivationResult.Error("Gagal terhubung ke server lisensi. Pastikan internet aktif. (${e.message ?: "unknown"})")
+        }
+    }
+
+    /** Dipanggil OPORTUNISTIK oleh [LicenseSyncWorker] (atau tombol "Cek Status Lisensi" manual)
+     * — BUKAN untuk memperpanjang apa pun (tidak ada yang kedaluwarsa di lisensi sekali bayar
+     * ini), HANYA untuk mendeteksi kalau penjual menonaktifkan lisensi yang sudah aktif di device
+     * ini. Gagal (offline, dsb.) TIDAK PERNAH mengubah status tersimpan — fail-open, konsisten
+     * dengan filosofi lisensi ini tidak boleh mewajibkan internet berkala. */
+    suspend fun checkStatus(): LicenseActivationResult {
+        val prefs = context.licenseDataStore.data.first()
+        val currentKey = prefs[KEY_LICENSE_KEY]
+            ?: return LicenseActivationResult.Error("Belum ada lisensi yang teraktivasi di device ini.")
+        val devId = deviceId()
+        return try {
+            val data = hashMapOf("licenseKey" to currentKey, "deviceId" to devId)
+            val result = functions.getHttpsCallable("checkLicenseStatus").call(data).await()
+            @Suppress("UNCHECKED_CAST")
+            val map = result.data as? Map<String, Any?>
+                ?: return LicenseActivationResult.Error("Respons server tidak valid.")
+            val isActive = map["isActive"] as? Boolean ?: true
+            context.licenseDataStore.edit { p ->
+                p[KEY_REVOKED] = !isActive
+                p[KEY_LAST_CHECKED_AT] = System.currentTimeMillis()
+            }
+            val updated = context.licenseDataStore.data.first()
+            LicenseActivationResult.Success(
+                computeState(
+                    licenseKey = updated[KEY_LICENSE_KEY],
+                    customerName = updated[KEY_CUSTOMER_NAME],
+                    plan = updated[KEY_PLAN],
+                    payloadJson = updated[KEY_PAYLOAD_JSON],
+                    signature = updated[KEY_SIGNATURE],
+                    activatedAt = updated[KEY_ACTIVATED_AT],
+                    lastCheckedAt = updated[KEY_LAST_CHECKED_AT],
+                    revoked = updated[KEY_REVOKED] ?: false,
+                    firstLaunchAt = updated[KEY_FIRST_LAUNCH_AT],
+                    lastError = if (!isActive) "Lisensi ini sudah dinonaktifkan penjual." else null,
+                )
+            )
+        } catch (e: FirebaseFunctionsException) {
+            // Gagal menghubungi server (termasuk offline) TIDAK mengubah status tersimpan sama
+            // sekali — lisensi yang sudah ACTIVE tetap ACTIVE. Hanya melaporkan error ke UI.
             LicenseActivationResult.Error(mapFunctionsError(e))
         } catch (e: Exception) {
             LicenseActivationResult.Error("Gagal terhubung ke server lisensi. Pastikan internet aktif. (${e.message ?: "unknown"})")
@@ -188,7 +263,7 @@ class LicenseRepository @Inject constructor(
         FirebaseFunctionsException.Code.NOT_FOUND -> "Kode lisensi tidak ditemukan. Cek kembali kode yang diberikan penjual."
         FirebaseFunctionsException.Code.PERMISSION_DENIED -> e.message
             ?: "Lisensi ini sudah dipakai di device lain dan sudah mencapai batas maksimal perangkat."
-        FirebaseFunctionsException.Code.FAILED_PRECONDITION -> e.message ?: "Lisensi ini sudah tidak aktif (nonaktif/kedaluwarsa dari sisi penjual)."
+        FirebaseFunctionsException.Code.FAILED_PRECONDITION -> e.message ?: "Lisensi ini sudah tidak aktif (dinonaktifkan penjual)."
         FirebaseFunctionsException.Code.UNAVAILABLE -> "Tidak bisa terhubung ke server. Cek koneksi internet."
         else -> e.message ?: "Gagal aktivasi lisensi (${e.code})."
     }

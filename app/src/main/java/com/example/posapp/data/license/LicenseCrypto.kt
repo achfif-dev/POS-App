@@ -16,7 +16,7 @@ import java.security.spec.X509EncodedKeySpec
  * APK bisa di-decompile siapa pun, sehingga kunci rahasia bocor dan siapa pun bisa membuat
  * token lisensi palsu sendiri (percuma sebagai proteksi anti-bajakan).
  *
- * Dengan RSA: server (Cloud Function `activateLicense`/`revalidateLicense`) memegang PRIVATE KEY
+ * Dengan RSA: server (Cloud Function `activateLicense`) memegang PRIVATE KEY
  * yang TIDAK PERNAH ada di dalam app. App hanya menyimpan PUBLIC KEY (aman dibagikan/dilihat
  * siapa pun — sesuai namanya) untuk memverifikasi tanda tangan SECARA OFFLINE. Public key boleh
  * bocor tanpa risiko; yang tidak boleh bocor (private key) memang tidak pernah dikirim ke device.
@@ -72,7 +72,6 @@ object LicenseCrypto {
             customerName = obj.optString("customerName", "-"),
             plan = obj.optString("plan", "standard"),
             issuedAt = obj.getLong("issuedAt"),
-            validUntil = obj.getLong("validUntil"),
         )
     }
 }

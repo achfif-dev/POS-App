@@ -19,6 +19,9 @@ class UserRepository @Inject constructor(
 
     suspend fun hasAnyUser(): Boolean = userDao.countActive() > 0
 
+    /** Dipakai UserManagementViewModel.deleteUser sebelum menghapus — lihat [deleteUser]. */
+    suspend fun countActiveAdmins(): Int = userDao.countActiveAdmins()
+
     /**
      * Mencoba login dengan PIN. Mengembalikan user jika PIN cocok dengan salah satu user aktif.
      *
@@ -60,6 +63,11 @@ class UserRepository @Inject constructor(
         userDao.update(user.copy(name = newName.trim()))
     }
 
+    /** Soft-delete (isActive=false, bukan hapus baris) supaya riwayat transaksi/audit log lama
+     * yang merujuk user ini tetap utuh. PENTING: pemanggil (UserManagementViewModel) WAJIB
+     * memastikan dulu ini bukan Admin aktif terakhir sebelum memanggil fungsi ini — repository
+     * ini sendiri tidak menolak, supaya tetap fleksibel dipakai dari tempat lain (mis. skrip
+     * migrasi) tanpa terkunci aturan UI. Lihat [countActiveAdmins]. */
     suspend fun deleteUser(id: Long) = userDao.softDelete(id)
 
     private fun generateSalt(): String {
