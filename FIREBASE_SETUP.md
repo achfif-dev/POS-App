@@ -18,7 +18,7 @@ bawah ini — hanya perlu dilakukan kalau kamu memang ingin memakai fitur multi-
 
 1. Di dashboard proyek, klik ikon Android untuk **Add app**.
 2. **Android package name**: isi persis sesuai `applicationId` di `app/build.gradle.kts`
-   (default repo ini: `id.gwg.posapp` — cek dan sesuaikan kalau kamu sudah menggantinya).
+   (repo ini sekarang pakai: `id.shiftq.posapp` — cek `app/build.gradle.kts` kalau sudah diganti lagi).
 3. Nickname app & SHA-1 boleh dikosongkan (tidak dipakai fitur ini).
 4. **Download `google-services.json`**.
 
