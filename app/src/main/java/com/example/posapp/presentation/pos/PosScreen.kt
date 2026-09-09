@@ -33,6 +33,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -341,6 +342,8 @@ fun PosScreen(
             isProcessing = uiState.isProcessing,
             onApplyLoyaltyRedemption = viewModel::applyLoyaltyRedemption,
             onClearLoyaltyRedemption = viewModel::clearLoyaltyRedemption,
+            hasPremiumAccess = hasPremiumAccess,
+            onOpenLicenseActivation = onOpenLicenseActivation,
             onDismiss = { showPaymentSheet = false },
             onConfirm = { payments, customerId -> viewModel.checkout(payments, customerId) }
         )
@@ -717,6 +720,11 @@ private fun PaymentModal(
     isProcessing: Boolean,
     onApplyLoyaltyRedemption: (CustomerEntity, Long) -> Unit = { _, _ -> },
     onClearLoyaltyRedemption: () -> Unit = {},
+    // Fitur prioritas QRIS Otomatis (Midtrans) dikunci kalau lisensi belum aktivasi & masa coba
+    // habis — lihat parameter sama di PosScreen di atas. Default true supaya caller lama/tes
+    // yang belum mengisi parameter ini tidak ikut terkunci tanpa sengaja.
+    hasPremiumAccess: Boolean = true,
+    onOpenLicenseActivation: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>, customerId: Long?) -> Unit
 ) {

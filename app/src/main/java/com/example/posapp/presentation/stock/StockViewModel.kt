@@ -42,7 +42,10 @@ class StockViewModel @Inject constructor(
         sessionManager.currentUser,
         storeProfileRepository.profile
     ) { user, profile -> Permission.canPerformStockOpname(user, profile.pinLoginEnabled) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        // Nilai awal fail-closed (false) selagi menunggu currentUser/profile pertama kali
+        // ter-emit — konsisten dengan Permission.kt (fail-closed), bukan cuma mengandalkan
+        // pertahanan lapis kedua di adjustStock/adjustVariantStock (audit 2026-09-09).
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val products: StateFlow<List<ProductEntity>> = productRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
