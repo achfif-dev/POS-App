@@ -34,8 +34,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -48,10 +50,12 @@ import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.settings.quickCashAmountList
 import com.example.posapp.domain.model.Cart
+import com.example.posapp.presentation.theme.CheckoutSuccessOverlay
+import com.example.posapp.presentation.theme.CountUpText
 import com.example.posapp.presentation.theme.PosBrandedTopBar
-import com.example.posapp.presentation.theme.ProductAvatar
 import com.example.posapp.presentation.theme.StoreLogo
 import com.example.posapp.presentation.theme.accentColorFor
+import com.example.posapp.presentation.theme.iconForCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
@@ -75,9 +79,17 @@ fun PosScreen(
     onOpenDashboard: () -> Unit = {},
     onLogout: () -> Unit = {},
     scannedSku: String? = null,
-    onScannedSkuConsumed: () -> Unit = {}
+    onScannedSkuConsumed: () -> Unit = {},
+    // Fitur prioritas: QRIS Otomatis (Midtrans) dikunci kalau lisensi belum aktivasi & masa coba
+    // 15 hari sudah habis — lihat LicenseState.hasPremiumAccess & PremiumFeatureGate di
+    // MainActivity.kt. Default true supaya caller lama/tes yang belum mengisi parameter ini
+    // tidak ikut terkunci tanpa sengaja. QRIS statis manual (upload gambar di Profil Toko) TIDAK
+    // pernah terkunci, tetap jalan sebagai cadangan seperti biasa.
+    hasPremiumAccess: Boolean = true,
+    onOpenLicenseActivation: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     val uiState by viewModel.uiState.collectAsState()
     val lastReceipt by viewModel.lastReceipt.collectAsState()
@@ -85,6 +97,9 @@ fun PosScreen(
     var showMenu by remember { mutableStateOf(false) }
     var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    // Overlay centang animasi setelah checkout sukses (menggantikan Snackbar teks polos yang
+    // gampang terlewat) — lihat CheckoutSuccessOverlay di presentation/theme/Micro.kt.
+    var checkoutSuccess by remember { mutableStateOf<PosEvent.CheckoutSuccess?>(null) }
 
     val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -103,6 +118,7 @@ fun PosScreen(
 
     LaunchedEffect(scannedSku) {
         if (scannedSku != null) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             viewModel.addToCartBySku(scannedSku)
             onScannedSkuConsumed()
         }
@@ -114,9 +130,8 @@ fun PosScreen(
                 is PosEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
                 is PosEvent.CheckoutSuccess -> {
                     showPaymentSheet = false
-                    snackbarHostState.showSnackbar(
-                        "Transaksi ${event.invoiceNumber} berhasil. Kembalian: ${rupiah.format(event.change)}"
-                    )
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    checkoutSuccess = event
                 }
                 is PosEvent.PdfReady -> {
                     autoLockManager.expectExternalActivityReturn()
@@ -230,6 +245,7 @@ fun PosScreen(
                                 if (product.hasVariants) {
                                     variantPickerProduct = product
                                 } else {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.addToCart(product)
                                 }
                             }
@@ -288,7 +304,13 @@ fun PosScreen(
                     shape = MaterialTheme.shapes.large,
                     enabled = !uiState.cart.isEmpty && !uiState.isProcessing
                 ) {
-                    Text("Bayar (${rupiah.format(uiState.cart.total)})")
+                    Text("Bayar (")
+                    CountUpText(
+                        value = uiState.cart.total,
+                        format = { rupiah.format(it) },
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(")")
                 }
             }
         }
@@ -333,6 +355,27 @@ fun PosScreen(
             onDismiss = { viewModel.dismissReceipt() },
             onPrint = { requestPrint() },
             onExportPdf = { viewModel.exportReceiptPdf() }
+        )
+    }
+
+    // Ditaruh paling akhir (dirender paling atas — NavHost membungkus tiap rute dalam Box sejak
+    // navigation-compose 2.4+, jadi urutan emisi = urutan layer) supaya menutupi seluruh layar
+    // Kasir sesaat, lalu hilang sendiri. Lihat CheckoutSuccessOverlay di theme/Micro.kt.
+    //
+    // "Ingat nilai terakhir" dipakai di sini (bukan langsung `checkoutSuccess?.let { ... }`)
+    // supaya animasi fade-out AnimatedVisibility sempat memainkan — kalau composable-nya
+    // langsung hilang begitu checkoutSuccess di-null-kan, animasi keluarnya tidak pernah
+    // terlihat sama sekali.
+    val retainedCheckoutSuccess = remember { mutableStateOf<PosEvent.CheckoutSuccess?>(null) }
+    LaunchedEffect(checkoutSuccess) {
+        if (checkoutSuccess != null) retainedCheckoutSuccess.value = checkoutSuccess
+    }
+    retainedCheckoutSuccess.value?.let { success ->
+        CheckoutSuccessOverlay(
+            visible = checkoutSuccess != null,
+            invoiceNumber = success.invoiceNumber,
+            subtitle = if (success.change > 0) "Kembalian: ${rupiah.format(success.change)}" else "Lunas",
+            onDismissRequest = { checkoutSuccess = null },
         )
     }
 }
@@ -527,36 +570,62 @@ private fun ReceiptDialog(
     }
 }
 
+// Foto produk dijadikan DOMINAN di bagian atas kartu (gaya e-commerce: Shopee/Tokopedia),
+// bukan avatar kecil di samping teks — jauh lebih cepat dikenali mata sekilas saat kasir
+// men-scroll grid berisi banyak SKU, terutama untuk toko F&B/retail dengan variasi visual
+// produk yang tinggi. Fallback tanpa foto: latar warna aksen + ikon kategori besar (bukan
+// AsyncImage kosong), supaya tetap terasa "dirancang" walau produk belum difoto.
 @Composable
 private fun ProductCard(product: ProductEntity, categoryName: String? = null, onClick: () -> Unit) {
     val accent = accentColorFor(product.name)
     val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
 
-    // Foto/ikon produk diletakkan di SAMPING (kiri) nama & harga dalam satu Row,
-    // bukan ditumpuk di atas teks — supaya kartu lebih ringkas seperti daftar produk
-    // pada umumnya dan foto langsung terlihat berdampingan dengan detail produknya.
-    // ProductAvatar (foto atau ikon sesuai kategori) sama persis dengan yang dipakai
-    // di layar Produk & Stok, supaya produk yang sama terlihat konsisten di mana pun.
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
-        Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            ProductAvatar(photoPath = product.photoPath, name = product.name, categoryName = categoryName, size = 48.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.weight(1f))
-                    if (isLowStock) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            Icons.Default.WarningAmber,
-                            contentDescription = "Stok tipis",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1.2f)
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (product.photoPath != null) {
+                    AsyncImage(
+                        model = product.photoPath,
+                        contentDescription = product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        iconForCategory(categoryName),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                if (isLowStock) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.WarningAmber,
+                                contentDescription = "Stok tipis",
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
                     }
                 }
+            }
+            Column(Modifier.padding(10.dp)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, color = accent, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
@@ -564,7 +633,7 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
                     Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 } else {
                     val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodySmall, color = stockColor)
+                    Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodySmall, color = stockColor, maxLines = 1)
                 }
             }
         }
@@ -877,7 +946,22 @@ private fun PaymentModal(
                     // metode bayar baru saja dipindah ke QRIS) — memastikan selalu mulai bersih.
                     LaunchedEffect(Unit) { qrisAutoViewModel.reset() }
 
-                    if (gatewayConfigured) {
+                    if (gatewayConfigured && !hasPremiumAccess) {
+                        // Gateway sudah dikonfigurasi toko, tapi fitur prioritas ini terkunci
+                        // (masa coba habis / lisensi belum aktivasi) — QRIS statis manual di atas
+                        // TETAP jalan penuh sebagai cadangan, kasir tinggal konfirmasi manual.
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "QRIS Otomatis terkunci — aktivasi lisensi untuk verifikasi realtime. " +
+                                "QRIS manual di atas tetap bisa dipakai seperti biasa.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = onOpenLicenseActivation) { Text("Aktivasi Lisensi") }
+                    } else if (gatewayConfigured) {
                         Spacer(Modifier.height(16.dp))
                         HorizontalDivider()
                         Spacer(Modifier.height(12.dp))

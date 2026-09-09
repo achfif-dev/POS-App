@@ -44,10 +44,15 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Layar ini menggantikan SELURUH isi app (bukan salah satu rute biasa) selama status lisensi
- * bukan ACTIVE/GRACE_PERIOD — lihat pemanggilannya di MainActivity (`LicenseGate`). Didesain
- * supaya PEMBELI aplikasi bisa mengaktifkan sendiri hanya dengan kode lisensi dari penjual,
- * tanpa perlu developer login/setting manual ke HP pelanggan.
+ * Layar ini adalah rute BIASA (`license_status`, dibuka dari Pengaturan atau dari
+ * `PremiumFeatureGate` di MainActivity.kt) — BUKAN gerbang yang mengunci seluruh app. Aplikasi
+ * selalu bisa dipakai untuk transaksi harian tanpa harus mampir ke sini dulu. Didesain supaya
+ * PEMBELI aplikasi bisa mengaktifkan sendiri hanya dengan kode lisensi dari penjual, tanpa perlu
+ * developer login/setting manual ke HP pelanggan.
+ *
+ * LISENSI INI SEKALI BAYAR, BUKAN LANGGANAN — begitu ACTIVE, tidak ada lagi apa pun untuk
+ * "diperbarui" secara berkala (lihat LicenseModels.kt & LicenseRepository.kt). Satu-satunya
+ * status pasca-aktivasi selain ACTIVE adalah REVOKED (dinonaktifkan penjual secara eksplisit).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +66,10 @@ fun LicenseActivationScreen(onActivated: () -> Unit) {
         if (uiState.justActivated) onActivated()
     }
 
-    val isExpiredNeedsInput = licenseState.status == LicenseStatus.EXPIRED || licenseState.status == LicenseStatus.NOT_ACTIVATED
+    val needsKeyInput = licenseState.status == LicenseStatus.NOT_ACTIVATED ||
+        licenseState.status == LicenseStatus.TRIAL ||
+        licenseState.status == LicenseStatus.TRIAL_EXPIRED ||
+        licenseState.status == LicenseStatus.REVOKED
 
     Scaffold(topBar = { TopAppBar(title = { Text("Aktivasi Aplikasi") }) }) { padding ->
         Column(
@@ -105,37 +113,74 @@ fun LicenseActivationScreen(onActivated: () -> Unit) {
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                }
-                LicenseStatus.GRACE_PERIOD -> {
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "Lisensi akan segera perlu diperbarui otomatis. Sambungkan HP ke internet " +
-                            "sebentar (WiFi/data) — aplikasi akan memperbarui sendiri di latar belakang.",
+                        "Lisensi sekali bayar — berlaku permanen di device ini, tidak perlu diperbarui atau dibayar ulang.",
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                LicenseStatus.TRIAL -> {
+                    val daysLeft = remember(licenseState.trialEndsAt) {
+                        val millisLeft = (licenseState.trialEndsAt ?: 0L) - System.currentTimeMillis()
+                        (millisLeft / (24 * 60 * 60 * 1000)).toInt().coerceAtLeast(0) + 1
+                    }
+                    Text(
+                        "Masa Coba: $daysLeft hari lagi",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Semua fitur, termasuk fitur prioritas (QRIS Otomatis, Sinkronisasi Cloud, " +
+                            "Cek Stok Lintas Cabang), bisa dicoba penuh selama masa ini. Aktivasi " +
+                            "kapan saja lewat kode lisensi dari penjual — cukup sekali, berlaku selamanya.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = onActivated) { Text("Lanjutkan pakai aplikasi") }
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { viewModel.retryRevalidate() }, enabled = !uiState.isLoading) {
-                        Text("Coba perbarui sekarang")
-                    }
                 }
-                LicenseStatus.EXPIRED -> {
+                LicenseStatus.TRIAL_EXPIRED -> {
                     Text(
-                        "Masa aktif lisensi habis dan belum berhasil diperpanjang otomatis.",
+                        "Masa Coba Sudah Berakhir",
                         style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center,
                     )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Tenang, transaksi harian (Kasir, Produk, Stok, Laporan) tetap bisa dipakai " +
+                            "seperti biasa. Yang terkunci hanya fitur prioritas (QRIS Otomatis, " +
+                            "Sinkronisasi Cloud, Cek Stok Lintas Cabang) sampai lisensi diaktivasi — " +
+                            "sekali bayar, berlaku selamanya, tidak ada biaya berulang.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+                LicenseStatus.REVOKED -> {
+                    Text(
+                        "Lisensi Dinonaktifkan",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Sambungkan HP ke internet lalu tekan tombol di bawah. Kalau kode lisensi " +
-                            "berubah (mis. berlangganan ulang), masukkan kode barunya.",
+                        "Penjual/developer menonaktifkan lisensi ini (mis. refund/chargeback). " +
+                            "Transaksi harian tetap bisa dipakai, hanya fitur prioritas yang terkunci. " +
+                            "Kalau ini keliru, hubungi penjual — setelah diaktifkan kembali, tekan " +
+                            "tombol di bawah untuk memeriksa ulang, atau masukkan kode lisensi baru.",
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { viewModel.retryRevalidate() }, enabled = !uiState.isLoading, modifier = Modifier.fillMaxWidth()) {
-                        Text("Perbarui Lisensi Sekarang")
+                    TextButton(onClick = { viewModel.checkStatusNow() }, enabled = !uiState.isLoading) {
+                        Text("Cek Status Lisensi Sekarang")
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
                 else -> {
                     Text(
@@ -145,8 +190,9 @@ fun LicenseActivationScreen(onActivated: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Kode ini dikirim penjual/developer aplikasi setelah pembelian (lewat WhatsApp/" +
-                            "email). Tempel di bawah lalu tekan Aktivasi — cukup sekali, HP butuh internet " +
-                            "hanya saat proses ini.",
+                            "email) — lisensi SEKALI BAYAR, bukan langganan. Tempel di bawah lalu tekan " +
+                            "Aktivasi — cukup sekali, HP butuh internet hanya saat proses ini, setelahnya " +
+                            "berlaku selamanya secara offline.",
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -155,7 +201,7 @@ fun LicenseActivationScreen(onActivated: () -> Unit) {
                 }
             }
 
-            if (isExpiredNeedsInput) {
+            if (needsKeyInput) {
                 OutlinedTextField(
                     value = keyInput,
                     onValueChange = { keyInput = it },
@@ -185,13 +231,13 @@ fun LicenseActivationScreen(onActivated: () -> Unit) {
                 }
             }
 
-            licenseState.validUntil?.let { validUntil ->
+            licenseState.activatedAt?.let { activatedAt ->
                 Spacer(Modifier.height(24.dp))
-                val formatted = remember(validUntil) {
-                    SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date(validUntil))
+                val formatted = remember(activatedAt) {
+                    SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date(activatedAt))
                 }
                 Text(
-                    "Terdaftar atas nama: ${licenseState.customerName ?: "-"}\nBerlaku otomatis diperpanjang, tenggat saat ini: $formatted",
+                    "Terdaftar atas nama: ${licenseState.customerName ?: "-"}\nAktif sejak: $formatted (sekali bayar, berlaku permanen)",
                     style = MaterialTheme.typography.labelSmall,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

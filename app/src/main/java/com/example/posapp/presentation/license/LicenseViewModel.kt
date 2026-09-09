@@ -49,12 +49,23 @@ class LicenseViewModel @Inject constructor(
         }
     }
 
-    fun retryRevalidate() {
+    /** Dipanggil dari tombol "Cek Status Lisensi" saat status REVOKED — MURNI mengecek ulang ke
+     * server apakah lisensi sudah diaktifkan kembali oleh penjual, BUKAN aktivasi ulang (tidak
+     * perlu memasukkan kode lagi, licenseKey yang sudah tersimpan dipakai lagi). Beda dari
+     * [activate]: `justActivated` hanya di-set true kalau hasil cek menunjukkan lisensi memang
+     * ACTIVE sekarang — supaya tombol ini tidak "keluar" dari layar Aktivasi kalau ternyata
+     * masih REVOKED.
+     */
+    fun checkStatusNow() {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val result = repository.revalidate()) {
+            when (val result = repository.checkStatus()) {
                 is LicenseActivationResult.Success ->
-                    _uiState.value = LicenseUiState(isLoading = false, justActivated = true)
+                    _uiState.value = LicenseUiState(
+                        isLoading = false,
+                        justActivated = result.state.status == LicenseStatus.ACTIVE,
+                        errorMessage = result.state.lastError,
+                    )
                 is LicenseActivationResult.Error ->
                     _uiState.value = LicenseUiState(isLoading = false, errorMessage = result.message)
             }

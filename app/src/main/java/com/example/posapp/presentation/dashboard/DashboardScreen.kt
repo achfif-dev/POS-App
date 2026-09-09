@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PointOfSale
@@ -27,7 +28,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.posapp.data.license.LicenseState
+import com.example.posapp.data.license.LicenseStatus
+import com.example.posapp.presentation.theme.CountUpText
 import com.example.posapp.presentation.theme.PosBrandedTopBar
+import com.example.posapp.presentation.theme.SkeletonChartCard
+import com.example.posapp.presentation.theme.SkeletonListRows
+import com.example.posapp.presentation.theme.SkeletonSummaryCardRow
 import com.example.posapp.presentation.theme.StoreLogo
 import java.text.NumberFormat
 import java.util.Locale
@@ -49,7 +56,12 @@ fun DashboardScreen(
     onOpenReports: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenShift: () -> Unit = {},
-    onOpenCustomers: () -> Unit = {}
+    onOpenCustomers: () -> Unit = {},
+    // Status lisensi HANYA dipakai untuk menampilkan banner info/ajakan aktivasi di sini —
+    // tidak pernah untuk mengunci konten Dashboard itu sendiri. Default null supaya caller
+    // lama/tes yang belum mengisi parameter ini tidak menampilkan banner apa pun.
+    licenseState: LicenseState? = null,
+    onOpenLicense: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -84,8 +96,17 @@ fun DashboardScreen(
         }
     ) { padding ->
         if (uiState.isLoading) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+            // Skeleton shimmer meniru bentuk kartu asli (bukan spinner polos di tengah layar
+            // kosong) — transisi ke data sungguhan jadi terasa mulus begitu selesai dimuat.
+            Column(
+                modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text("Ringkasan Hari Ini", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                SkeletonSummaryCardRow()
+                SkeletonSummaryCardRow()
+                SkeletonChartCard()
+                SkeletonListRows(lines = 3)
             }
             return@Scaffold
         }
@@ -94,6 +115,11 @@ fun DashboardScreen(
             modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (licenseState != null && licenseState.status != LicenseStatus.ACTIVE) {
+                item {
+                    LicenseBanner(licenseState = licenseState, onOpenLicense = onOpenLicense)
+                }
+            }
             item {
                 Text("Ringkasan Hari Ini", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
@@ -104,15 +130,24 @@ fun DashboardScreen(
                         icon = Icons.AutoMirrored.Filled.TrendingUp,
                         accent = MaterialTheme.colorScheme.primary,
                         label = "Omzet",
-                        value = rupiah.format(uiState.todayRevenue)
-                    )
+                    ) {
+                        CountUpText(
+                            value = uiState.todayRevenue,
+                            format = { rupiah.format(it) },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
                     SummaryCard(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.Receipt,
                         accent = MaterialTheme.colorScheme.tertiary,
                         label = "Transaksi",
-                        value = "${uiState.todayTransactions}"
-                    )
+                    ) {
+                        com.example.posapp.presentation.theme.CountUpIntText(
+                            value = uiState.todayTransactions,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
                 }
             }
             item {
@@ -122,16 +157,22 @@ fun DashboardScreen(
                         icon = Icons.Default.ShoppingCart,
                         accent = MaterialTheme.colorScheme.secondary,
                         label = "Laba Kotor",
-                        value = rupiah.format(uiState.todayGrossProfit)
-                    )
+                    ) {
+                        CountUpText(
+                            value = uiState.todayGrossProfit,
+                            format = { rupiah.format(it) },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
                     SummaryCard(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.WarningAmber,
                         accent = MaterialTheme.colorScheme.error,
                         label = "Stok Tipis",
-                        value = "${uiState.lowStockCount} produk",
-                        onClick = onOpenStock
-                    )
+                        onClick = onOpenStock,
+                    ) {
+                        Text("${uiState.lowStockCount} produk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
                 }
             }
 
@@ -150,8 +191,22 @@ fun DashboardScreen(
             if (uiState.topProducts.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Box(Modifier.padding(20.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text("Belum ada transaksi hari ini", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            Modifier.padding(24.dp).fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                Icons.Default.Receipt,
+                                contentDescription = null,
+                                modifier = Modifier.size(36.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Belum ada transaksi hari ini",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
                     }
                 }
@@ -214,14 +269,67 @@ fun DashboardScreen(
 
 /** Logo toko di header Dashboard — implementasi bersama ada di theme/BrandedTopBar.kt. */
 
+/**
+ * Banner info/ajakan aktivasi di puncak Dashboard — SATU-SATUNYA tempat status lisensi terlihat
+ * di alur harian kasir (selain rute Pengaturan > Status Lisensi & layar fitur prioritas yang
+ * terkunci). Tidak pernah menghalangi konten Dashboard, hanya kartu informatif yang bisa
+ * diabaikan; kasir/admin tetap bebas lanjut ke Ringkasan/Menu Cepat di bawahnya.
+ */
+@Composable
+private fun LicenseBanner(licenseState: LicenseState, onOpenLicense: () -> Unit) {
+    val (title, message, containerColor) = when (licenseState.status) {
+        LicenseStatus.TRIAL -> {
+            val daysLeft = remember(licenseState.trialEndsAt) {
+                val millisLeft = (licenseState.trialEndsAt ?: 0L) - System.currentTimeMillis()
+                (millisLeft / (24 * 60 * 60 * 1000)).toInt().coerceAtLeast(0) + 1
+            }
+            Triple(
+                "Masa Coba: $daysLeft hari lagi",
+                "Semua fitur, termasuk QRIS Otomatis & Sinkronisasi Cloud, bisa dicoba penuh. Aktivasi kapan saja, tidak wajib sekarang.",
+                MaterialTheme.colorScheme.primaryContainer,
+            )
+        }
+        LicenseStatus.TRIAL_EXPIRED, LicenseStatus.REVOKED -> Triple(
+            "Fitur Prioritas Terkunci",
+            "Transaksi harian tetap jalan seperti biasa. Aktivasi lisensi (sekali bayar, berlaku selamanya) untuk membuka kembali QRIS Otomatis & Sinkronisasi Cloud.",
+            MaterialTheme.colorScheme.errorContainer,
+        )
+        LicenseStatus.NOT_ACTIVATED -> Triple(
+            "Memuat Status Lisensi…",
+            "Sebentar lagi selesai.",
+            MaterialTheme.colorScheme.surfaceVariant,
+        )
+        LicenseStatus.ACTIVE -> return // tidak pernah dipanggil untuk status ini, dijaga di caller
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        onClick = onOpenLicense,
+    ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Key, contentDescription = null)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(2.dp))
+                Text(message, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
 @Composable
 private fun SummaryCard(
     modifier: Modifier = Modifier,
     icon: ImageVector,
     accent: androidx.compose.ui.graphics.Color,
     label: String,
-    value: String,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    // Konten nilai lewat lambda (bukan String polos) supaya pemanggil bisa memasang
+    // CountUpText/CountUpIntText yang animasinya ikut jalan otomatis tiap `uiState` berubah,
+    // tanpa SummaryCard perlu tahu tipe datanya (Rupiah, jumlah produk, dst).
+    value: @Composable () -> Unit,
 ) {
     Card(
         modifier = modifier,
@@ -237,7 +345,7 @@ private fun SummaryCard(
             }
             Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            value()
         }
     }
 }

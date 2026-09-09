@@ -25,7 +25,6 @@ import androidx.navigation.navArgument
 import com.example.posapp.data.auth.AutoLockManager
 import com.example.posapp.data.auth.LocalAutoLockManager
 import com.example.posapp.data.auth.SessionManager
-import com.example.posapp.data.license.LicenseStatus
 import com.example.posapp.domain.auth.Permission
 import com.example.posapp.presentation.auth.AuthGateViewModel
 import com.example.posapp.presentation.license.LicenseActivationScreen
@@ -95,19 +94,38 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Gerbang lisensi PALING LUAR — dicek sebelum login PIN/nav-graph apa pun. Kalau status BUKAN
- * ACTIVE/GRACE_PERIOD, seluruh app diganti dengan [LicenseActivationScreen] (self-service, lihat
- * file itu) sampai pengguna berhasil aktivasi/revalidasi. GRACE_PERIOD tetap meloloskan ke [content]
- * supaya toko tidak terkunci mendadak — [LicenseActivationScreen] sendiri yang menampilkan
- * pengingat halus lewat rute lain (mis. banner di Dashboard/Pengaturan bisa ditambah kalau perlu).
+ * Lisensi TIDAK PERNAH mengganti/mengunci seluruh app lagi (lihat catatan filosofi di
+ * `LicenseStatus` & `LicenseState.hasPremiumAccess` di LicenseModels.kt) — [content] (nav-graph
+ * lengkap: login, Kasir, Produk, Stok, Laporan, dst.) SELALU dirender apa pun status lisensinya,
+ * termasuk masa coba yang sudah habis atau lisensi berbayar yang lewat masa tenggang. Ini
+ * sengaja dibiarkan sebagai wrapper tipis (bukan langsung dihapus) supaya kalau suatu saat perlu
+ * menambah sesuatu yang berlaku di seluruh app terkait lisensi (mis. banner global), tempatnya
+ * sudah jelas di sini — bukan supaya menggerbang [content].
  */
 @Composable
 private fun LicenseGate(content: @Composable () -> Unit) {
-    val licenseViewModel: LicenseViewModel = hiltViewModel()
-    val licenseState by licenseViewModel.licenseState.collectAsState()
-    when (licenseState.status) {
-        LicenseStatus.ACTIVE, LicenseStatus.GRACE_PERIOD -> content()
-        LicenseStatus.NOT_ACTIVATED, LicenseStatus.EXPIRED -> LicenseActivationScreen(onActivated = {})
+    content()
+}
+
+/**
+ * Pembungkus untuk rute FITUR PRIORITAS (Sinkronisasi Cloud, Multi-Cabang, Cek Stok Lintas
+ * Cabang) — satu-satunya tempat status lisensi benar-benar membatasi sesuatu. Kalau
+ * [hasPremiumAccess] false (belum aktivasi & masa coba 15 hari sudah habis, ATAU lisensi
+ * berbayar sudah lewat masa tenggang), tampilkan [PremiumLockedScreen] yang mengajak aktivasi,
+ * alih-alih konten asli rute tersebut. Fitur inti (Kasir/Produk/Stok/Laporan) TIDAK PERNAH
+ * dibungkus dengan ini.
+ */
+@Composable
+private fun PremiumFeatureGate(
+    hasPremiumAccess: Boolean,
+    onActivate: () -> Unit,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (hasPremiumAccess) {
+        content()
+    } else {
+        com.example.posapp.presentation.license.PremiumLockedScreen(onActivate = onActivate, onBack = onBack)
     }
 }
 
@@ -118,6 +136,10 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
     val storeProfile by storeViewModel.uiState.collectAsState()
     val currentUser by sessionManager.currentUser.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    // Status lisensi tunggal untuk seluruh nav-graph — dipakai HANYA untuk menggerbang fitur
+    // prioritas (lihat PremiumFeatureGate), tidak pernah untuk fitur inti.
+    val licenseViewModel: LicenseViewModel = hiltViewModel()
+    val licenseState by licenseViewModel.licenseState.collectAsState()
 
     val startDestination = "login_gate"
 
@@ -182,7 +204,9 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                 onOpenReports = { navController.navigate("reports") },
                 onOpenSettings = { navController.navigate("settings") },
                 onOpenShift = { navController.navigate("shift") },
-                onOpenCustomers = { navController.navigate("customers") }
+                onOpenCustomers = { navController.navigate("customers") },
+                licenseState = licenseState,
+                onOpenLicense = { navController.navigate("license_status") },
             )
         }
         composable("pos") { backStackEntry ->
@@ -212,7 +236,11 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                         }
                     },
                     scannedSku = scannedSku.value,
-                    onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null }
+                    onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null },
+                    // Fitur prioritas (QRIS Otomatis) — QRIS statis manual TETAP jalan sebagai
+                    // cadangan kalau ini false, lihat pemakaiannya di PosScreen.kt.
+                    hasPremiumAccess = licenseState.hasPremiumAccess,
+                    onOpenLicenseActivation = { navController.navigate("license_status") },
                 )
             }
         }
@@ -342,7 +370,13 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val currentUser by sessionManager.currentUser.collectAsState()
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
-                CloudSyncScreen(onBack = { navController.popBackStack() })
+                PremiumFeatureGate(
+                    hasPremiumAccess = licenseState.hasPremiumAccess,
+                    onActivate = { navController.navigate("license_status") },
+                    onBack = { navController.popBackStack() },
+                ) {
+                    CloudSyncScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("multi_outlet") {
@@ -350,7 +384,13 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val currentUser by sessionManager.currentUser.collectAsState()
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
-                MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+                PremiumFeatureGate(
+                    hasPremiumAccess = licenseState.hasPremiumAccess,
+                    onActivate = { navController.navigate("license_status") },
+                    onBack = { navController.popBackStack() },
+                ) {
+                    MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("outlet_stock_check") {
@@ -358,7 +398,13 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             val currentUser by sessionManager.currentUser.collectAsState()
             val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
             RoleGatedRoute(allowed = allowed, navController = navController) {
-                com.example.posapp.presentation.sync.OutletStockCheckScreen(onBack = { navController.popBackStack() })
+                PremiumFeatureGate(
+                    hasPremiumAccess = licenseState.hasPremiumAccess,
+                    onActivate = { navController.navigate("license_status") },
+                    onBack = { navController.popBackStack() },
+                ) {
+                    com.example.posapp.presentation.sync.OutletStockCheckScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("audit_log") {

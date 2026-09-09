@@ -40,6 +40,14 @@ object Permission {
     fun canVoidTransaction(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
         isAdminOrPinDisabled(user, pinLoginEnabled)
 
+    // Koreksi harga/qty/item transaksi yang SUDAH tersimpan (lewat Riwayat Penjualan) — HANYA
+    // Admin, risiko yang sama seperti Void: bisa dipakai menutupi kecurangan pada transaksi yang
+    // sudah selesai (audit menyeluruh menemukan ReportViewModel.saveTransactionCorrection() tidak
+    // pernah memanggil fungsi ini sama sekali — cuma tombol yang disembunyikan di UI untuk
+    // non-Admin, celah yang sama seperti void sebelum diperbaiki).
+    fun canCorrectTransaction(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
+        isAdminOrPinDisabled(user, pinLoginEnabled)
+
     // Manajemen Produk (tambah/ubah/hapus produk & kategori, termasuk harga beli/margin) —
     // level sama seperti Expenses: ADMIN & MANAGER boleh, KASIR TIDAK. Sebelumnya rute
     // "products" tidak digerbang sama sekali (audit 2026-09-06) sehingga kasir bisa melihat

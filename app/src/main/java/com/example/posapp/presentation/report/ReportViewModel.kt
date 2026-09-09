@@ -181,6 +181,17 @@ class ReportViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            // Pertahanan lapis kedua (fail-closed) — lihat catatan di voidTransaction() di bawah
+            // untuk kenapa cek ini tidak cukup hanya di UI. Audit menyeluruh menemukan fungsi ini
+            // sebelumnya TIDAK PERNAH memeriksa role sama sekali di sini.
+            val profile = storeProfileRepository.profile.first()
+            val allowed = com.example.posapp.domain.auth.Permission.canCorrectTransaction(
+                sessionManager.currentUser.value, profile.pinLoginEnabled
+            )
+            if (!allowed) {
+                _events.emit(ReportEvent.ShowMessage("Hanya Admin yang boleh mengoreksi transaksi"))
+                return@launch
+            }
             _detailState.value = current.copy(isSaving = true)
             val editorName = sessionManager.currentUser.value?.name ?: "Admin"
             transactionRepository.updateTransactionWithCorrection(
@@ -207,12 +218,24 @@ class ReportViewModel @Inject constructor(
      * Membatalkan (VOID) SATU transaksi sepenuhnya — pengganti fungsi hapus permanen yang lama.
      * Beda dari hapus permanen: transaksi tetap tersimpan (statusnya jadi VOIDED) supaya ada
      * jejak audit, hanya dikeluarkan dari perhitungan Laporan. Stok dikembalikan otomatis.
-     * Hanya boleh dipanggil untuk Admin — dicek di layer UI (tombol cuma tampil utk Admin,
-     * sama seperti tombol "Hapus Transaksi" yang lama).
+     * Admin-only: tombol memang disembunyikan untuk non-Admin di UI (lihat `isAdmin` di
+     * [ReportUiState]), tapi itu BUKAN satu-satunya penghalang — [Permission.canVoidTransaction]
+     * dicek ULANG di sini juga (fail-closed), sama seperti pola pertahanan lapis kedua yang
+     * dipakai StockViewModel.adjustStock untuk Opname (audit menyeluruh berikutnya menemukan
+     * fungsi ini sebelumnya HANYA mengandalkan UI, celah yang sama persis yang sudah diperbaiki
+     * di rute lain pada audit 2026-09-06 — sekarang konsisten).
      */
     fun voidTransaction(transactionId: Long, reason: String) {
         val invoiceNumber = _detailState.value?.transaction?.invoiceNumber ?: "#$transactionId"
         viewModelScope.launch {
+            val profile = storeProfileRepository.profile.first()
+            val allowed = com.example.posapp.domain.auth.Permission.canVoidTransaction(
+                sessionManager.currentUser.value, profile.pinLoginEnabled
+            )
+            if (!allowed) {
+                _events.emit(ReportEvent.ShowMessage("Hanya Admin yang boleh membatalkan (void) transaksi"))
+                return@launch
+            }
             _detailState.value = _detailState.value?.copy(isSaving = true)
             val byName = sessionManager.currentUser.value?.name ?: "Admin"
             try {

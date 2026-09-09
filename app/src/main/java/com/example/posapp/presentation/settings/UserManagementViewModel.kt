@@ -51,8 +51,14 @@ class UserManagementViewModel @Inject constructor(
 
     fun setPinLoginEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            if (enabled && userRepository.hasAnyUser().not()) {
-                _events.emit(UserManagementEvent.ShowMessage("Tambahkan minimal satu kasir/admin dengan PIN terlebih dahulu"))
+            // BUG SERIUS terkait (ditemukan bersamaan dengan bug di deleteUser() di atas):
+            // sebelumnya hanya mensyaratkan "ada minimal 1 user" APAPUN rolenya. Kalau toko
+            // baru menambahkan Kasir dulu (tanpa Admin) lalu langsung mengaktifkan PIN login,
+            // rute "settings"/"user_management" langsung terkunci untuk SEMUA orang (keduanya
+            // admin-only) — tidak ada yang bisa membuat Admin atau mematikan PIN lagi. Sekarang
+            // disyaratkan minimal 1 ADMIN aktif, bukan sekadar 1 user apa pun.
+            if (enabled && userRepository.countActiveAdmins() <= 0) {
+                _events.emit(UserManagementEvent.ShowMessage("Tambahkan minimal satu pengguna dengan role Admin terlebih dahulu"))
                 return@launch
             }
             storeProfileRepository.setPinLoginEnabled(enabled)
@@ -85,8 +91,27 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
+    /**
+     * BUG SERIUS (ditemukan saat audit menyeluruh): sebelumnya fungsi ini menghapus (soft-delete)
+     * user APA PUN tanpa syarat. Kalau toko hanya punya satu Admin dan Admin itu terhapus
+     * (sengaja atau salah pencet) sementara PIN login aktif, TIDAK ADA LAGI cara masuk ke
+     * Pengaturan/Manajemen Pengguna — halaman itu sendiri admin-only — jadi toko permanen
+     * terkunci dari fitur manajemennya sendiri kecuali hapus data aplikasi (kehilangan semua
+     * transaksi). Sekarang dicegah: kalau user yang dihapus adalah Admin DAN dialah satu-satunya
+     * Admin aktif yang tersisa, penghapusan ditolak dengan pesan jelas.
+     */
     fun deleteUser(user: UserEntity) {
         viewModelScope.launch {
+            if (user.role == UserRole.ADMIN && userRepository.countActiveAdmins() <= 1) {
+                _events.emit(
+                    UserManagementEvent.ShowMessage(
+                        "Tidak bisa menghapus \"${user.name}\" — ini Admin aktif terakhir. " +
+                            "Tambahkan Admin lain dulu sebelum menghapus akun ini, supaya toko " +
+                            "tidak kehilangan akses ke Pengaturan."
+                    )
+                )
+                return@launch
+            }
             userRepository.deleteUser(user.id)
             auditLogRepository.log(
                 actorName = sessionManager.currentUser.value?.name ?: "Admin",
