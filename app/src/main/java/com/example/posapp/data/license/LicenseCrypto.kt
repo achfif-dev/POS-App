@@ -31,7 +31,7 @@ import java.security.spec.X509EncodedKeySpec
  */
 object LicenseCrypto {
 
-    private const val LICENSE_PUBLIC_KEY_BASE64 = "PASTE_PUBLIC_KEY_BASE64_DI_SINI_SETELAH_GENERATE"
+    private const val LICENSE_PUBLIC_KEY_BASE64 = "0Wod7n3MHVb0N2xKdPqznKfoqVTs3ydIhyq45xWyMxrQZvuSg446edWp1VPOOK0diyRRbVuZMKA6ndbeZtqzI6Aatd3NShncQ12kFUM4q91eDs8JTpYXHffe2RI3flygStB0kakhoPDvFIJQnteUSjkL8b7ObH9HQToDN48uFvbwMtSjwdwIDAQAB"
 
     private val publicKey: PublicKey? by lazy {
         if (LICENSE_PUBLIC_KEY_BASE64.startsWith("PASTE_")) return@lazy null
