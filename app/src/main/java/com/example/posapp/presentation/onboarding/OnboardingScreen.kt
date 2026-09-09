@@ -35,6 +35,7 @@ import com.example.posapp.presentation.theme.PosAccentPresets
  * Pengaturan > Profil Toko. Semua langkah bisa dilewati ("Lewati") — nilai defaultnya tetap
  * aman dipakai (bisa diubah lagi kapan saja lewat Pengaturan).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
     viewModel: OnboardingViewModel = hiltViewModel(),
