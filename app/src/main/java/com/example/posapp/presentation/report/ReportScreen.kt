@@ -430,6 +430,13 @@ private fun TransactionDetailDialog(
     val taxAmount = ((subtotal - transaction.discountAmount).coerceAtLeast(0.0)) * (transaction.taxPercent / 100.0)
     val total = (subtotal - transaction.discountAmount + taxAmount).coerceAtLeast(0.0)
     val remainingCount = editableItems.count { !it.deleted }
+    // PERBAIKAN BUG: transaksi VOID tidak punya tombol "Simpan Koreksi" (lihat di bawah -- tidak
+    // masuk akal mengoreksi transaksi yang sudah dibatalkan), tapi field edit qty/harga/diskon
+    // & ikon hapus item TETAP ditampilkan dan bisa "diklik" tanpa efek apa pun karena tidak ada
+    // yang bisa disimpan. Dari sudut pandang pengguna, ikon hapus terkesan "tidak berfungsi".
+    // [canEditTransaction] menonaktifkan seluruh mode edit untuk transaksi VOID, konsisten
+    // dengan tidak adanya tombol simpan -- transaksi VOID jadi murni baca-saja.
+    val canEditTransaction = isAdmin && transaction.status != "VOIDED"
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large) {
@@ -487,13 +494,13 @@ private fun TransactionDetailDialog(
                         Column(Modifier.padding(vertical = 6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(item.label, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                if (isAdmin) {
+                                if (canEditTransaction) {
                                     IconButton(onClick = { item.deleted = true }) {
                                         Icon(Icons.Default.Delete, contentDescription = "Hapus item")
                                     }
                                 }
                             }
-                            if (isAdmin) {
+                            if (canEditTransaction) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedTextField(
                                         value = item.quantity,
@@ -530,7 +537,7 @@ private fun TransactionDetailDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
-                if (isAdmin) {
+                if (canEditTransaction) {
                     OutlinedTextField(
                         value = note,
                         onValueChange = { note = it },
