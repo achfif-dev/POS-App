@@ -581,6 +581,31 @@ private fun TransactionDetailDialog(
                     Text(rupiah.format(total), fontWeight = FontWeight.Bold)
                 }
 
+                // UX FIX (audit 2026-09-10): sebelumnya kalau semua item dihapus, "Simpan
+                // Koreksi" cuma diam-diam jadi disabled tanpa penjelasan -- dari sudut pandang
+                // pengguna ikon hapus terkesan "tidak berfungsi" (paling kelihatan di transaksi
+                // 1-item: hapus satu-satunya item = macet, tidak ada cara lanjut). Sekarang kasih
+                // pesan eksplisit yang mengarahkan ke Void, tombol yang memang dibuat untuk
+                // membatalkan transaksi sepenuhnya.
+                if (canEditTransaction && remainingCount == 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            // canEditTransaction sudah mensyaratkan isAdmin (lihat definisinya di
+                            // atas), jadi di titik ini yang melihat pesan ini pasti Admin -- tidak
+                            // perlu cabang pesan untuk non-Admin.
+                            "Semua item dihapus — transaksi tidak bisa disimpan kosong. " +
+                                "Kalau memang mau membatalkan seluruh transaksi ini, gunakan tombol Void di bawah.",
+                            modifier = Modifier.padding(10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(16.dp))
                 // Footer disusun bertumpuk (bukan satu Row sempit) supaya tombol "Simpan
                 // Koreksi" selalu punya ruang penuh selebar dialog dan teksnya tidak
@@ -599,13 +624,28 @@ private fun TransactionDetailDialog(
                                 Text("Retur Barang", maxLines = 1)
                             }
                             if (isAdmin) {
-                                TextButton(
-                                    onClick = onVoidRequest,
-                                    enabled = !detail.isSaving
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Void", color = MaterialTheme.colorScheme.error)
+                                // Ditekankan visual (filled, bukan cuma teks) saat semua item
+                                // sudah dihapus -- ini jadi satu-satunya jalan keluar yang valid
+                                // di kondisi itu (lihat pesan peringatan di atas Total).
+                                if (remainingCount == 0) {
+                                    Button(
+                                        onClick = onVoidRequest,
+                                        enabled = !detail.isSaving,
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Void")
+                                    }
+                                } else {
+                                    TextButton(
+                                        onClick = onVoidRequest,
+                                        enabled = !detail.isSaving
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Void", color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }
