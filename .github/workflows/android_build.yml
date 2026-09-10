@@ -5,6 +5,10 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch: {}
+# WAJIB: 'contents: write' supaya step "Auto-commit skema Room" bisa git push balik ke repo
+# pakai GITHUB_TOKEN bawaan (default token cuma read-only untuk repo publik).
+permissions:
+  contents: write
 jobs:
   build:
     name: Build & Test
@@ -162,3 +166,71 @@ jobs:
           name: lint-report
           path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+
+      # Room exportSchema=true (AppDatabase.kt) menulis snapshot skema JSON ke app/schemas/
+      # setiap kali build (assembleDebug/assembleRelease di atas sudah men-generate-nya via KSP).
+      # File ini WAJIB ada di repo (Room akan menolak compile kalau versi baru tidak punya
+      # snapshot skema sebelumnya untuk divalidasi), tapi karena kamu tidak punya PC/git lokal
+      # untuk commit manual, step ini auto-commit balik ke branch yang sama kalau ada perubahan.
+      - name: Auto-commit skema Room (app/schemas)
+        if: github.event_name == 'push'
+        run: |
+          if [ -n "$(git status --porcelain app/schemas)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/schemas
+            git commit -m "chore: auto-commit skema Room [skip ci]"
+            git push
+          else
+            echo "Tidak ada perubahan skema Room, skip commit."
+          fi
+
+  smoke-test:
+    name: Smoke Test Release APK (Logcat)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Release APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-apk
+          path: release-apk
+      - name: Enable KVM (emulator acceleration)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Install + buka APK Release di emulator, lalu tangkap logcat — supaya force-close
+      # (mis. akibat R8 men-strip sesuatu yang dibutuhkan saat runtime) ketahuan otomatis
+      # di Actions, tanpa perlu adb/PC lokal.
+      - name: Run emulator, install & open Release APK, capture logcat
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          script: |
+            APK=$(find release-apk -name "*.apk" | head -n 1)
+            echo "Installing $APK"
+            adb install -r "$APK"
+            adb logcat -c
+            PACKAGE=$(aapt dump badging "$APK" | grep package | awk -F"'" '{print $2}')
+            LAUNCH_ACTIVITY=$(aapt dump badging "$APK" | grep launchable-activity | awk -F"'" '{print $2}')
+            adb shell am start -n "$PACKAGE/$LAUNCH_ACTIVITY"
+            sleep 10
+            adb logcat -d > logcat.txt
+            if grep -q "FATAL EXCEPTION" logcat.txt || ! adb shell pidof "$PACKAGE" > /dev/null; then
+              echo "::error::APK Release tampak force-close saat dibuka — cek artifact logcat."
+              cat logcat.txt
+              exit 1
+            fi
+            echo "APK Release berhasil dibuka tanpa force-close."
+      - name: Upload logcat artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-logcat
+          path: logcat.txt
+          if-no-files-found: ignore
+          retention-days: 30
