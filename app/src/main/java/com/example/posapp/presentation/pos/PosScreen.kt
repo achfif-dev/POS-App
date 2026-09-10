@@ -86,7 +86,7 @@ fun PosScreen(
     // MainActivity.kt. Default true supaya caller lama/tes yang belum mengisi parameter ini
     // tidak ikut terkunci tanpa sengaja. QRIS statis manual (upload gambar di Profil Toko) TIDAK
     // pernah terkunci, tetap jalan sebagai cadangan seperti biasa.
-    hasPremiumAccess: Boolean = true,
+    hasPremiumAccess: Boolean = false, // fail-closed: default aman kalau ada pemanggil baru lupa passing nilai asli
     onOpenLicenseActivation: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -728,7 +728,7 @@ private fun PaymentModal(
     // Fitur prioritas QRIS Otomatis (Midtrans) dikunci kalau lisensi belum aktivasi & masa coba
     // habis — lihat parameter sama di PosScreen di atas. Default true supaya caller lama/tes
     // yang belum mengisi parameter ini tidak ikut terkunci tanpa sengaja.
-    hasPremiumAccess: Boolean = true,
+    hasPremiumAccess: Boolean = false, // fail-closed: default aman kalau ada pemanggil baru lupa passing nilai asli
     onOpenLicenseActivation: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (List<com.example.posapp.domain.usecase.PaymentSplit>, customerId: Long?) -> Unit
