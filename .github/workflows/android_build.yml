@@ -219,8 +219,9 @@ jobs:
             APK=$(find release-apk -name "*.apk" | head -n 1); if [ -z "$APK" ]; then echo "::error::Tidak ada file .apk ditemukan di folder release-apk (download artifact kemungkinan gagal)."; ls -la release-apk; exit 1; fi; echo "$APK" > /tmp/apk_path.txt; echo "APK ditemukan: $APK"
             APK=$(cat /tmp/apk_path.txt); adb install -r "$APK"
             adb logcat -c
-            APK=$(cat /tmp/apk_path.txt); aapt dump badging "$APK" | grep package | awk -F"'" '{print $2}' > /tmp/package.txt; aapt dump badging "$APK" | grep launchable-activity | awk -F"'" '{print $2}' > /tmp/activity.txt; echo "Package: $(cat /tmp/package.txt) / Activity: $(cat /tmp/activity.txt)"
-            PACKAGE=$(cat /tmp/package.txt); ACTIVITY=$(cat /tmp/activity.txt); adb shell am start -n "$PACKAGE/$ACTIVITY"
+            AAPT=$(find /usr/local/lib/android/sdk/build-tools -maxdepth 1 -type d | sort -V | tail -n1)/aapt; if [ ! -x "$AAPT" ]; then AAPT=$(find / -name aapt -type f 2>/dev/null | head -n1); fi; echo "$AAPT" > /tmp/aapt_path.txt; echo "aapt: $AAPT"
+            APK=$(cat /tmp/apk_path.txt); AAPT=$(cat /tmp/aapt_path.txt); "$AAPT" dump badging "$APK" | grep package | awk -F"'" '{print $2}' > /tmp/package.txt; "$AAPT" dump badging "$APK" | grep launchable-activity | awk -F"'" '{print $2}' > /tmp/activity.txt; echo "Package: $(cat /tmp/package.txt) / Activity: $(cat /tmp/activity.txt)"
+            PACKAGE=$(cat /tmp/package.txt); ACTIVITY=$(cat /tmp/activity.txt); if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then echo "::error::Gagal membaca package/activity dari aapt (cek log step sebelumnya)."; exit 1; fi; adb shell am start -n "$PACKAGE/$ACTIVITY"
             sleep 10
             adb logcat -d > logcat.txt
             PACKAGE=$(cat /tmp/package.txt); if grep -q "FATAL EXCEPTION" logcat.txt || ! adb shell pidof "$PACKAGE" > /dev/null; then echo "::error::APK Release tampak force-close saat dibuka — cek artifact logcat."; cat logcat.txt; exit 1; fi
