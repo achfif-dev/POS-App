@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.Surface
@@ -12,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,6 +57,38 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * ID acak yang dibuat SEKALI per PROSES (bukan per Activity) -- `object` di Kotlin/JVM baru
+ * di-load ulang saat proses baru benar-benar dibuat, jadi `id` ini otomatis berbeda setiap kali
+ * OS mematikan proses lalu membuat proses baru (umum di HP dengan app-killer agresif seperti
+ * Vivo/FuntouchOS, Xiaomi/MIUI, Oppo/ColorOS -- TIDAK harus karena RAM penuh), tapi TETAP SAMA
+ * selama proses masih hidup (termasuk saat Activity di-destroy-lalu-recreate akibat rotasi
+ * layar/perubahan konfigurasi biasa).
+ *
+ * PERBAIKAN BUG: layar putih ("blank") yang muncul sesaat setelah auto-lock melempar ke halaman
+ * Login, lalu macet total sampai app ditutup paksa. Akar masalahnya BUKAN di AutoLockManager,
+ * tapi di NavController (Navigation-Compose): `rememberNavController()` otomatis MENYIMPAN &
+ * MEMULIHKAN seluruh back stack navigasi lewat savedInstanceState Activity. Saat OS membunuh
+ * proses app di background (kasus PALING SERING di Vivo dkk, bahkan dengan RAM masih banyak
+ * kosong -- ini kebijakan battery-saver pabrikan, bukan soal memori), lalu pengguna kembali:
+ * Activity dibuat ulang, tapi back stack navigasi ikut dipulihkan APA ADANYA ke layar SEBELUM
+ * di-kill (mis. "pos"/"dashboard") -- padahal SessionManager & data profil toko yang baru mulai
+ * dari nol (kosong/default) karena Hilt & seluruh proses memang baru. Layar lama itu sempat
+ * ter-render dulu (dengan ViewModel-nya masing-masing ikut jalan dari nol) sebelum sempat
+ * dikoreksi ke Login oleh redirect effect di [PosNavHost] -- proses render+inisialisasi ulang
+ * yang tumpang tindih inilah yang bikin macet.
+ *
+ * Dengan membungkus [PosNavHost] di dalam `key(ProcessSession.id)`, setiap kali proses BENAR-
+ * BENAR baru, Compose memperlakukan seluruh subtree navigasi sebagai instance BARU (slot
+ * composition berbeda) -- back stack lama dari savedInstanceState TIDAK IKUT dipulihkan, NavHost
+ * selalu mulai bersih dari `login_gate` seperti cold-start murni. Rotasi layar/perubahan
+ * konfigurasi biasa (proses TETAP hidup) tidak terpengaruh sama sekali -- back stack & state
+ * layar pengguna (mis. sedang mengisi form Produk) tetap dipulihkan seperti biasa.
+ */
+private object ProcessSession {
+    val id: String = java.util.UUID.randomUUID().toString()
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -71,7 +105,12 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalAutoLockManager provides autoLockManager) {
                     Surface(modifier = Modifier) {
                         LicenseGate {
-                            PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                            // key(ProcessSession.id) -- lihat dokumentasi ProcessSession di atas:
+                            // ini yang mencegah back stack "basi" dari proses sebelumnya ikut
+                            // dipulihkan saat proses app baru dibuat ulang oleh OS.
+                            key(ProcessSession.id) {
+                                PosNavHost(sessionManager = sessionManager, autoLockManager = autoLockManager)
+                            }
                         }
                     }
                 }
@@ -146,6 +185,7 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
     val navController = rememberNavController()
     val storeViewModel: StoreProfileViewModel = hiltViewModel()
     val storeProfile by storeViewModel.uiState.collectAsState()
+    val isProfileLoaded by storeViewModel.isLoaded.collectAsState()
     val currentUser by sessionManager.currentUser.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     // Status lisensi tunggal untuk seluruh nav-graph — dipakai HANYA untuk menggerbang fitur
@@ -186,6 +226,25 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             }
         }
     }
+
+    // PERBAIKAN BUG (layar putih macet & tidak responsif setelah auto-lock -- paling sering di
+    // HP yang agresif membunuh proses aplikasi latar belakang seperti Vivo/FuntouchOS, Xiaomi/
+    // MIUI, Oppo/ColorOS, dll, walau RAM masih longgar): saat OS membunuh proses lalu app dibuka
+    // lagi, Navigation-Compose me-restore back stack LAMA (mis. masih di "dashboard"/"pos")
+    // sebelum SessionManager (baru, currentUser = null) dan StoreProfileViewModel (baru mulai
+    // baca DataStore) sempat dapat nilai aslinya. Tanpa gerbang ini, konten ASLI rute yang
+    // ter-restore itu -- termasuk ViewModel beratnya (query Room, listener Firestore Cloud Sync,
+    // decode gambar, dsb, semuanya lewat hiltViewModel() di dalam body composable-nya) -- sempat
+    // mulai jalan di frame pertama, TEPAT bersamaan dengan LaunchedEffect di atas yang mencoba
+    // redirect ke Login. Login sempat kelihatan sekilas, lalu macet putih.
+    //
+    // [AuthGatedRoute] mencegah ini: konten asli rute terproteksi (dan ViewModel-nya) SAMA
+    // SEKALI TIDAK dibuat selama sesi belum dipastikan valid -- cukup dikosongkan sesaat,
+    // menunggu LaunchedEffect di atas selesai redirect ke Login. Fail-closed: selama profil toko
+    // BELUM selesai dimuat ([isProfileLoaded] masih false), anggap dulu perlu login (lebih aman
+    // daripada asumsi "tidak perlu login" yang bisa salah).
+    fun isAuthGateBlocking(): Boolean =
+        !isProfileLoaded || (storeProfile.pinLoginEnabled && currentUser == null)
 
     NavHost(
         navController = navController,
@@ -245,223 +304,266 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
             })
         }
         composable("dashboard") {
-            DashboardScreen(
-                onOpenPos = { navController.navigate("pos") },
-                onOpenProducts = { navController.navigate("products") },
-                onOpenStock = { navController.navigate("stock") },
-                onOpenReports = { navController.navigate("reports") },
-                onOpenSettings = { navController.navigate("settings") },
-                onOpenShift = { navController.navigate("shift") },
-                onOpenCustomers = { navController.navigate("customers") },
-                licenseState = licenseState,
-                onOpenLicense = { navController.navigate("license_status") },
-            )
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                DashboardScreen(
+                    onOpenPos = { navController.navigate("pos") },
+                    onOpenProducts = { navController.navigate("products") },
+                    onOpenStock = { navController.navigate("stock") },
+                    onOpenReports = { navController.navigate("reports") },
+                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenShift = { navController.navigate("shift") },
+                    onOpenCustomers = { navController.navigate("customers") },
+                    licenseState = licenseState,
+                    onOpenLicense = { navController.navigate("license_status") },
+                )
+            }
         }
         composable("pos") { backStackEntry ->
             val scannedSku = backStackEntry.savedStateHandle
                 .getStateFlow<String?>("scanned_sku", null)
                 .collectAsState()
-            // Gerbang shift: kalau "Wajibkan Login PIN" aktif (mode multi-kasir), transaksi tidak
-            // boleh berjalan tanpa shift terbuka -- supaya kas tunai selalu bisa direkonsiliasi ke
-            // shift & kasir yang jelas. Mode single-user (PIN nonaktif) tidak digerbang: toko kecil
-            // yang tidak butuh disiplin shift tidak dipaksa memakainya.
-            val shiftGateViewModel: ShiftViewModel = hiltViewModel()
-            val activeShift by shiftGateViewModel.activeShift.collectAsState()
-            if (storeProfile.pinLoginEnabled && activeShift == null) {
-                ShiftRequiredPrompt(onOpenShift = { navController.navigate("shift") })
-            } else {
-                PosScreen(
-                    onOpenProducts = { navController.navigate("products") },
-                    onOpenScanner = { navController.navigate("scanner") },
-                    onOpenReports = { navController.navigate("reports") },
-                    onOpenStock = { navController.navigate("stock") },
-                    onOpenSettings = { navController.navigate("settings") },
-                    onOpenDashboard = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                    onLogout = {
-                        sessionManager.logout()
-                        navController.navigate("login") {
-                            popUpTo("pos") { inclusive = true }
-                        }
-                    },
-                    scannedSku = scannedSku.value,
-                    onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null },
-                    // Fitur prioritas (QRIS Otomatis) — QRIS statis manual TETAP jalan sebagai
-                    // cadangan kalau ini false, lihat pemakaiannya di PosScreen.kt.
-                    hasPremiumAccess = licenseState.hasPremiumAccess,
-                    onOpenLicenseActivation = { navController.navigate("license_status") },
-                )
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Gerbang shift: kalau "Wajibkan Login PIN" aktif (mode multi-kasir), transaksi
+                // tidak boleh berjalan tanpa shift terbuka -- supaya kas tunai selalu bisa
+                // direkonsiliasi ke shift & kasir yang jelas. Mode single-user (PIN nonaktif)
+                // tidak digerbang: toko kecil yang tidak butuh disiplin shift tidak dipaksa
+                // memakainya.
+                val shiftGateViewModel: ShiftViewModel = hiltViewModel()
+                val activeShift by shiftGateViewModel.activeShift.collectAsState()
+                if (storeProfile.pinLoginEnabled && activeShift == null) {
+                    ShiftRequiredPrompt(onOpenShift = { navController.navigate("shift") })
+                } else {
+                    PosScreen(
+                        onOpenProducts = { navController.navigate("products") },
+                        onOpenScanner = { navController.navigate("scanner") },
+                        onOpenReports = { navController.navigate("reports") },
+                        onOpenStock = { navController.navigate("stock") },
+                        onOpenSettings = { navController.navigate("settings") },
+                        onOpenDashboard = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
+                        onLogout = {
+                            sessionManager.logout()
+                            navController.navigate("login") {
+                                popUpTo("pos") { inclusive = true }
+                            }
+                        },
+                        scannedSku = scannedSku.value,
+                        onScannedSkuConsumed = { backStackEntry.savedStateHandle["scanned_sku"] = null },
+                        // Fitur prioritas (QRIS Otomatis) — QRIS statis manual TETAP jalan sebagai
+                        // cadangan kalau ini false, lihat pemakaiannya di PosScreen.kt.
+                        hasPremiumAccess = licenseState.hasPremiumAccess,
+                        onOpenLicenseActivation = { navController.navigate("license_status") },
+                    )
+                }
             }
         }
         composable("shift") {
-            ShiftScreen(
-                onBack = { navController.popBackStack() },
-                onShiftOpened = { }
-            )
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                ShiftScreen(
+                    onBack = { navController.popBackStack() },
+                    onShiftOpened = { }
+                )
+            }
         }
         composable("customers") {
-            CustomerScreen(
-                onBack = { navController.popBackStack() },
-                onOpenDetail = { customerId -> navController.navigate("customer_detail/$customerId") }
-            )
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                CustomerScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDetail = { customerId -> navController.navigate("customer_detail/$customerId") }
+                )
+            }
         }
         composable(
             route = "customer_detail/{customerId}",
             arguments = listOf(navArgument("customerId") { type = NavType.LongType })
         ) {
-            CustomerDetailScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                CustomerDetailScreen(onBack = { navController.popBackStack() })
+            }
         }
         composable("products") {
-            // Manajemen Produk (termasuk harga beli/margin) — ADMIN & MANAGER, KASIR ditolak.
-            // Sebelumnya rute ini tidak digerbang sama sekali (audit 2026-09-06).
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canManageProducts(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                ProductScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Manajemen Produk (termasuk harga beli/margin) — ADMIN & MANAGER, KASIR ditolak.
+                // Sebelumnya rute ini tidak digerbang sama sekali (audit 2026-09-06).
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canManageProducts(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    ProductScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("scanner") {
-            BarcodeScannerScreen(
-                onBarcodeDetected = { sku ->
-                    navController.previousBackStackEntry?.savedStateHandle?.set("scanned_sku", sku)
-                    navController.popBackStack()
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
-        composable("reports") {
-            ReportScreen(
-                onBack = { navController.popBackStack() },
-                onOpenExpenses = { navController.navigate("expenses") }
-            )
-        }
-        composable("expenses") {
-            // Guard peran terpusat lewat Permission (fail-closed): PIN aktif + bukan Admin -> ditolak.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessExpenses(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                ExpenseScreen(onBack = { navController.popBackStack() })
-            }
-        }
-        composable("stock") { StockScreen(onBack = { navController.popBackStack() }) }
-        composable("settings") {
-            // Guard peran terpusat lewat Permission (fail-closed): PIN aktif + bukan Admin -> ditolak,
-            // menu ini juga sudah disembunyikan di UI Dashboard — ini lapisan pertahanan kedua.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenStoreProfile = { navController.navigate("store_profile") },
-                    onOpenUserManagement = { navController.navigate("user_management") },
-                    onOpenExpenses = { navController.navigate("expenses") },
-                    onOpenCloudSync = { navController.navigate("cloud_sync") },
-                    onOpenMultiOutlet = { navController.navigate("multi_outlet") },
-                    onOpenAuditLog = { navController.navigate("audit_log") },
-                    onOpenSuppliers = { navController.navigate("suppliers") },
-                    onOpenPaymentGateway = { navController.navigate("payment_gateway") },
-                    onOpenLicense = { navController.navigate("license_status") },
-                    onOpenOutletStockCheck = { navController.navigate("outlet_stock_check") }
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                BarcodeScannerScreen(
+                    onBarcodeDetected = { sku ->
+                        navController.previousBackStackEntry?.savedStateHandle?.set("scanned_sku", sku)
+                        navController.popBackStack()
+                    },
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
+        composable("reports") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                ReportScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenExpenses = { navController.navigate("expenses") }
+                )
+            }
+        }
+        composable("expenses") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Guard peran terpusat lewat Permission (fail-closed): PIN aktif + bukan Admin -> ditolak.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessExpenses(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    ExpenseScreen(onBack = { navController.popBackStack() })
+                }
+            }
+        }
+        composable("stock") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                StockScreen(onBack = { navController.popBackStack() })
+            }
+        }
+        composable("settings") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Guard peran terpusat lewat Permission (fail-closed): PIN aktif + bukan Admin -> ditolak,
+                // menu ini juga sudah disembunyikan di UI Dashboard — ini lapisan pertahanan kedua.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenStoreProfile = { navController.navigate("store_profile") },
+                        onOpenUserManagement = { navController.navigate("user_management") },
+                        onOpenExpenses = { navController.navigate("expenses") },
+                        onOpenCloudSync = { navController.navigate("cloud_sync") },
+                        onOpenMultiOutlet = { navController.navigate("multi_outlet") },
+                        onOpenAuditLog = { navController.navigate("audit_log") },
+                        onOpenSuppliers = { navController.navigate("suppliers") },
+                        onOpenPaymentGateway = { navController.navigate("payment_gateway") },
+                        onOpenLicense = { navController.navigate("license_status") },
+                        onOpenOutletStockCheck = { navController.navigate("outlet_stock_check") }
+                    )
+                }
+            }
+        }
         composable("payment_gateway") {
-            // Kredensial payment gateway toko sendiri -> setara sensitifnya dengan rute
-            // Pengaturan lain (bisa mengubah rekening tujuan uang QRIS masuk), admin-only.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                com.example.posapp.presentation.payment.PaymentGatewaySettingsScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Kredensial payment gateway toko sendiri -> setara sensitifnya dengan rute
+                // Pengaturan lain (bisa mengubah rekening tujuan uang QRIS masuk), admin-only.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    com.example.posapp.presentation.payment.PaymentGatewaySettingsScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("license_status") {
-            // Info lisensi boleh dilihat siapa pun yang bisa masuk Pengaturan (bukan rahasia
-            // finansial toko), tetap dibungkus guard Pengaturan yang sama untuk konsistensi.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                com.example.posapp.presentation.license.LicenseActivationScreen(onActivated = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Info lisensi boleh dilihat siapa pun yang bisa masuk Pengaturan (bukan rahasia
+                // finansial toko), tetap dibungkus guard Pengaturan yang sama untuk konsistensi.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    com.example.posapp.presentation.license.LicenseActivationScreen(onActivated = { navController.popBackStack() })
+                }
             }
         }
         composable("store_profile") {
-            // Sebelumnya route ini TIDAK punya guard sama sekali — hanya "tersembunyi" karena
-            // cuma dinavigasi dari dalam SettingsScreen yang sudah digerbang. Itu bukan pertahanan
-            // nyata: siapa pun yang bisa memicu navigasi langsung ke "store_profile" (deep link,
-            // shortcut, kode baru di masa depan) bisa melewatinya. Sekarang digerbang independen.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canManageBackup(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                StoreProfileScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Sebelumnya route ini TIDAK punya guard sama sekali — hanya "tersembunyi" karena
+                // cuma dinavigasi dari dalam SettingsScreen yang sudah digerbang. Itu bukan pertahanan
+                // nyata: siapa pun yang bisa memicu navigasi langsung ke "store_profile" (deep link,
+                // shortcut, kode baru di masa depan) bisa melewatinya. Sekarang digerbang independen.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canManageBackup(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    StoreProfileScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("user_management") {
-            // Sama seperti "store_profile" di atas: dulu tanpa guard independen. Manajemen
-            // Pengguna & PIN adalah rute paling sensitif di app ini (bisa membuat/menghapus admin),
-            // jadi wajib digerbang sendiri, bukan cuma mengandalkan UI SettingsScreen di atasnya.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                UserManagementScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Sama seperti "store_profile" di atas: dulu tanpa guard independen. Manajemen
+                // Pengguna & PIN adalah rute paling sensitif di app ini (bisa membuat/menghapus admin),
+                // jadi wajib digerbang sendiri, bukan cuma mengandalkan UI SettingsScreen di atasnya.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    UserManagementScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("suppliers") {
-            // Kelola Pemasok (v13) — admin-only sama seperti rute Pengaturan lain, digerbang
-            // independen (bukan cuma tersembunyi di UI SettingsScreen).
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                com.example.posapp.presentation.settings.SupplierScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Kelola Pemasok (v13) — admin-only sama seperti rute Pengaturan lain, digerbang
+                // independen (bukan cuma tersembunyi di UI SettingsScreen).
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    com.example.posapp.presentation.settings.SupplierScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
         composable("cloud_sync") {
-            // Sinkronisasi Cloud (Fase 4) mengubah pengaturan tingkat toko/cabang -> admin-only,
-            // sama seperti rute Pengaturan lain.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                PremiumFeatureGate(
-                    hasPremiumAccess = licenseState.hasPremiumAccess,
-                    onActivate = { navController.navigate("license_status") },
-                    onBack = { navController.popBackStack() },
-                ) {
-                    CloudSyncScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Sinkronisasi Cloud (Fase 4) mengubah pengaturan tingkat toko/cabang -> admin-only,
+                // sama seperti rute Pengaturan lain.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    PremiumFeatureGate(
+                        hasPremiumAccess = licenseState.hasPremiumAccess,
+                        onActivate = { navController.navigate("license_status") },
+                        onBack = { navController.popBackStack() },
+                    ) {
+                        CloudSyncScreen(onBack = { navController.popBackStack() })
+                    }
                 }
             }
         }
         composable("multi_outlet") {
-            // Ringkasan lintas cabang ini data tingkat pemilik -> admin-only.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                PremiumFeatureGate(
-                    hasPremiumAccess = licenseState.hasPremiumAccess,
-                    onActivate = { navController.navigate("license_status") },
-                    onBack = { navController.popBackStack() },
-                ) {
-                    MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Ringkasan lintas cabang ini data tingkat pemilik -> admin-only.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    PremiumFeatureGate(
+                        hasPremiumAccess = licenseState.hasPremiumAccess,
+                        onActivate = { navController.navigate("license_status") },
+                        onBack = { navController.popBackStack() },
+                    ) {
+                        MultiOutletDashboardScreen(onBack = { navController.popBackStack() })
+                    }
                 }
             }
         }
         composable("outlet_stock_check") {
-            // Cek stok realtime lintas cabang (read-only) -> data tingkat pemilik, admin-only.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                PremiumFeatureGate(
-                    hasPremiumAccess = licenseState.hasPremiumAccess,
-                    onActivate = { navController.navigate("license_status") },
-                    onBack = { navController.popBackStack() },
-                ) {
-                    com.example.posapp.presentation.sync.OutletStockCheckScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Cek stok realtime lintas cabang (read-only) -> data tingkat pemilik, admin-only.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    PremiumFeatureGate(
+                        hasPremiumAccess = licenseState.hasPremiumAccess,
+                        onActivate = { navController.navigate("license_status") },
+                        onBack = { navController.popBackStack() },
+                    ) {
+                        com.example.posapp.presentation.sync.OutletStockCheckScreen(onBack = { navController.popBackStack() })
+                    }
                 }
             }
         }
         composable("audit_log") {
-            // Log Aktivitas berisi jejak Void/Retur/Koreksi transaksi & manajemen Pengguna ->
-            // sama sensitifnya dengan rute Pengaturan lain, admin-only.
-            val currentUser by sessionManager.currentUser.collectAsState()
-            val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
-            RoleGatedRoute(allowed = allowed, navController = navController) {
-                AuditLogScreen(onBack = { navController.popBackStack() })
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Log Aktivitas berisi jejak Void/Retur/Koreksi transaksi & manajemen Pengguna ->
+                // sama sensitifnya dengan rute Pengaturan lain, admin-only.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canAccessSettings(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    AuditLogScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
     }
@@ -471,6 +573,30 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
  * Wrapper guard route yang konsisten untuk semua rute admin-only: kalau [allowed] false,
  * langsung mundur ke layar sebelumnya (route ditolak) alih-alih menampilkan kontennya sesaat.
  */
+/**
+ * Menggerbang SEMUA rute yang butuh sesi valid (semua rute selain "login_gate"/"login"/
+ * "onboarding"). Selama [blocking] true, konten ASLI rute -- dan seluruh ViewModel beratnya yang
+ * dibuat lewat hiltViewModel() di dalam [content] (query Room, listener Firestore Cloud Sync,
+ * dll) -- SAMA SEKALI TIDAK dibuat. Sengaja dikosongkan total (bukan spinner) sesaat, sambil
+ * menunggu redirect ke Login selesai lewat LaunchedEffect(currentUser, currentBackStackEntry,
+ * storeProfile) di [PosNavHost].
+ *
+ * PERBAIKAN BUG: ini bagian [AuthGatedRoute] yang sebelumnya sudah DISEBUT di komentar &
+ * fungsi [isAuthGateBlocking] sudah dibuat, tapi keduanya TIDAK PERNAH benar-benar dipasang di
+ * rute manapun -- proteksinya tidak pernah aktif. Tanpa ini, saat proses aplikasi dibuat ulang
+ * OS (auto-lock/app-switch di HP dengan battery-saver agresif seperti Vivo/FuntouchOS -- BUKAN
+ * soal RAM penuh) dan Navigation-Compose memulihkan back stack lama (mis. masih di "pos"),
+ * konten asli rute itu sempat mulai jalan dengan sesi/profil yang belum tentu valid TEPAT saat
+ * redirect ke Login berjalan -- dua proses render yang tumpang tindih itulah yang membuat
+ * layar macet putih. Dengan gerbang ini, konten asli rute baru dibuat SETELAH dipastikan aman.
+ */
+@Composable
+private fun AuthGatedRoute(blocking: Boolean, content: @Composable () -> Unit) {
+    if (!blocking) {
+        content()
+    }
+}
+
 @Composable
 private fun RoleGatedRoute(
     allowed: Boolean,
