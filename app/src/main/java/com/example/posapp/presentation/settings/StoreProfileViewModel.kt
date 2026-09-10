@@ -9,10 +9,13 @@ import com.example.posapp.data.settings.StoreProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.example.posapp.data.settings.quickCashAmountList
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,7 +31,18 @@ class StoreProfileViewModel @Inject constructor(
     private val printerRepository: PrinterRepository
 ) : ViewModel() {
 
+    // PERBAIKAN BUG (layar putih macet setelah auto-lock, terutama di HP yang agresif membunuh
+    // proses background seperti Vivo/FuntouchOS): `uiState` di bawah SELALU mulai dari
+    // StoreProfile() default (pinLoginEnabled = false) sebelum data asli dari DataStore selesai
+    // dibaca -- MainActivity butuh cara membedakan "belum tahu" dari "memang pinLoginEnabled =
+    // false", supaya tidak terlanjur merender layar terproteksi dengan asumsi keliru "tidak perlu
+    // login" tepat saat proses baru saja dibuat ulang OS. `isLoaded` jadi true SEKALI setelah
+    // emisi pertama data asli tiba.
+    private val _isLoaded = MutableStateFlow(false)
+    val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
+
     val uiState: StateFlow<StoreProfile> = storeProfileRepository.profile
+        .onEach { _isLoaded.value = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StoreProfile())
 
     private val _events = MutableSharedFlow<StoreProfileEvent>()
