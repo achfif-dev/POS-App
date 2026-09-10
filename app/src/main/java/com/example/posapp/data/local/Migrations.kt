@@ -165,3 +165,32 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_products_supplierId ON products(supplierId)")
     }
 }
+
+/**
+ * v13 -> v14: Tabel `cash_movements` — kas masuk/keluar non-penjualan per shift (mis. ambil kas
+ * untuk keperluan lain, belanja dadakan pakai uang laci, setoran tambahan modal di tengah shift).
+ * Dipakai oleh ShiftRepository.closeShift untuk mengoreksi "kas seharusnya" di luar hasil
+ * penjualan tunai murni — sebelum ini, pergerakan semacam itu sama sekali tidak tercatat sehingga
+ * selisih kas saat tutup shift bisa salah tanpa sebab yang jelas bagi kasir/pemilik.
+ */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cash_movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                shiftId INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                reason TEXT NOT NULL,
+                createdByName TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                FOREIGN KEY(shiftId) REFERENCES shifts(id) ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_cash_movements_shiftId ON cash_movements(shiftId)"
+        )
+    }
+}

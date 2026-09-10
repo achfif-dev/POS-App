@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.posapp.data.local.AppDatabase
 import com.example.posapp.data.local.dao.AuditLogDao
+import com.example.posapp.data.local.dao.CashMovementDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
@@ -35,7 +36,8 @@ object DatabaseModule {
                 com.example.posapp.data.local.MIGRATION_9_10,
                 com.example.posapp.data.local.MIGRATION_10_11,
                 com.example.posapp.data.local.MIGRATION_11_12,
-                com.example.posapp.data.local.MIGRATION_12_13
+                com.example.posapp.data.local.MIGRATION_12_13,
+                com.example.posapp.data.local.MIGRATION_13_14
             )
             // Hanya untuk skenario downgrade (mis. pasang ulang APK versi lama secara tidak
             // sengaja) — kasus langka yang aman diberi fallback destruktif karena versi
@@ -76,4 +78,7 @@ object DatabaseModule {
 
     @Provides
     fun provideSupplierDao(db: AppDatabase): com.example.posapp.data.local.dao.SupplierDao = db.supplierDao()
+
+    @Provides
+    fun provideCashMovementDao(db: AppDatabase): CashMovementDao = db.cashMovementDao()
 }

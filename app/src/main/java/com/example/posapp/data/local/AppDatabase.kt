@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.example.posapp.data.local.dao.AuditLogDao
+import com.example.posapp.data.local.dao.CashMovementDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
@@ -16,6 +17,8 @@ import com.example.posapp.data.local.dao.SupplierDao
 import com.example.posapp.data.local.dao.TransactionDao
 import com.example.posapp.data.local.dao.UserDao
 import com.example.posapp.data.local.entity.AuditLogEntity
+import com.example.posapp.data.local.entity.CashMovementEntity
+import com.example.posapp.data.local.entity.CashMovementType
 import com.example.posapp.data.local.entity.CategoryEntity
 import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.DebtPaymentEntity
@@ -60,6 +63,12 @@ class Converters {
 
     @TypeConverter
     fun toShiftStatus(value: String): ShiftStatus = ShiftStatus.valueOf(value)
+
+    @TypeConverter
+    fun fromCashMovementType(value: CashMovementType): String = value.name
+
+    @TypeConverter
+    fun toCashMovementType(value: String): CashMovementType = CashMovementType.valueOf(value)
 }
 
 @Database(
@@ -79,9 +88,10 @@ class Converters {
         TransactionReturnEntity::class,
         TransactionReturnItemEntity::class,
         AuditLogEntity::class,
-        SupplierEntity::class
+        SupplierEntity::class,
+        CashMovementEntity::class
     ],
-    version = 13, // v13: loyaltyPoints di customers, tabel suppliers + products.supplierId
+    version = 14, // v14: tabel cash_movements (kas masuk/keluar non-penjualan per shift)
     // exportSchema = true: mulai v10, setiap build menyimpan snapshot skema JSON ke app/schemas/
     // (lihat room.schemaLocation di app/build.gradle.kts). WAJIB commit folder schemas/ ke Git.
     // Ini yang memungkinkan migrasi berikutnya (v10 -> v11, dst.) diuji otomatis dengan
@@ -103,6 +113,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun auditLogDao(): AuditLogDao
     abstract fun supplierDao(): SupplierDao
+    abstract fun cashMovementDao(): CashMovementDao
 
     companion object {
         const val DATABASE_NAME = "pos_database"

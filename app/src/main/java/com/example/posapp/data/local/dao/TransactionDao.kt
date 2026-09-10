@@ -5,6 +5,7 @@ import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
 import com.example.posapp.data.local.entity.TransactionReturnEntity
+import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionReturnItemEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -19,6 +20,19 @@ data class TopSellingItem(
     val productName: String,
     val totalQty: Int,
     val totalRevenue: Double
+)
+
+/** Baris CASH per-transaksi + changeAmount transaksi itu sendiri — lihat getCashPaymentsWithChangeInRange. */
+data class CashTransactionAmount(
+    val transactionId: Long,
+    val cashAmount: Double,
+    val changeAmount: Double
+)
+
+/** Total per metode pembayaran dalam suatu rentang — lihat getPaymentMethodTotalsInRange. */
+data class PaymentMethodTotal(
+    val method: PaymentMethod,
+    val total: Double
 )
 
 @Dao
@@ -148,19 +162,43 @@ interface TransactionDao {
     )
     suspend fun getReturnedGrossProfitInRange(start: Long, end: Long): Double
 
-    // Dipakai saat tutup shift: total tunai (CASH) yang seharusnya masuk laci selama shift
-    // berjalan, dihitung dari transaction_payments (bukan transactions.total) supaya transaksi
-    // split payment (MIXED) hanya menyumbang porsi CASH-nya saja, bukan total transaksi penuh.
-    // Transaksi VOIDED dikeluarkan (uangnya dianggap tidak pernah masuk laci).
+    // Dipakai saat tutup shift: baris CASH per-transaksi beserta changeAmount transaksi itu
+    // sendiri, supaya penjualan tunai BERSIH bisa dihitung per transaksi di repository —
+    // (cashAmount - changeAmount).coerceAtLeast(0.0) — bukan dijumlah kotor.
+    //
+    // PERBAIKAN (lihat catatan lama di getCashTotalInRange sebelum ini): dulu query ini langsung
+    // men-SUM tp.amount tanpa mengurangi kembalian, sehingga uang kembalian yang sudah diberikan
+    // ke pembeli tetap dihitung seolah masih ada di laci → shift selalu tampak "kas kurang" walau
+    // kasir sudah benar. GROUP BY t.id supaya kalau suatu saat ada >1 baris CASH dalam satu
+    // transaksi (split pembayaran dengan 2 kali input tunai), changeAmount transaksi itu tidak
+    // ikut kehitung berulang kali. Transaksi VOIDED dikeluarkan (uangnya dianggap tidak pernah
+    // masuk laci).
     @Query(
         """
-        SELECT COALESCE(SUM(tp.amount), 0)
+        SELECT t.id AS transactionId,
+               COALESCE(SUM(tp.amount), 0) AS cashAmount,
+               t.changeAmount AS changeAmount
+        FROM transactions t
+        JOIN transaction_payments tp ON tp.transactionId = t.id AND tp.method = 'CASH'
+        WHERE t.createdAt BETWEEN :start AND :end AND t.status != 'VOIDED'
+        GROUP BY t.id
+        """
+    )
+    suspend fun getCashPaymentsWithChangeInRange(start: Long, end: Long): List<CashTransactionAmount>
+
+    // Dipakai saat tutup shift: total per metode pembayaran (QRIS/DEBIT_CREDIT/BON) untuk
+    // ditampilkan sebagai breakdown rekonsiliasi. Untuk CASH sengaja TIDAK dipakai dari sini —
+    // gunakan getCashPaymentsWithChangeInRange supaya kembalian ikut diperhitungkan.
+    @Query(
+        """
+        SELECT tp.method AS method, COALESCE(SUM(tp.amount), 0) AS total
         FROM transaction_payments tp
         JOIN transactions t ON t.id = tp.transactionId
-        WHERE tp.method = 'CASH' AND t.createdAt BETWEEN :start AND :end AND t.status != 'VOIDED'
-    """
+        WHERE t.createdAt BETWEEN :start AND :end AND t.status != 'VOIDED'
+        GROUP BY tp.method
+        """
     )
-    suspend fun getCashTotalInRange(start: Long, end: Long): Double
+    suspend fun getPaymentMethodTotalsInRange(start: Long, end: Long): List<PaymentMethodTotal>
 
     @Query(
         """
