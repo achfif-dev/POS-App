@@ -175,6 +175,7 @@ private fun PromoRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PromoEditorDialog(
     existing: PromoEntity?,
