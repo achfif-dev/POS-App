@@ -115,7 +115,7 @@ class LabelPrintViewModel @Inject constructor(
                             failed = true
                         }
                     }
-                    if (failed) return@outer
+                    if (failed) break@outer
                 }
             }
             if (!failed) {
