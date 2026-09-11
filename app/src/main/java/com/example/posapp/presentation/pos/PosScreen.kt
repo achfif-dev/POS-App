@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,6 +42,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -227,15 +230,33 @@ fun PosScreen(
                     value = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Cari produk atau scan barcode...") },
+                    placeholder = { Text("Cari produk, scan kamera, atau alat scan...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = onOpenScanner) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan")
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Kamera")
                         }
                     },
                     singleLine = true,
-                    shape = MaterialTheme.shapes.large
+                    shape = MaterialTheme.shapes.large,
+                    // Dukungan alat scan barcode fisik (USB/Bluetooth) TANPA kamera device.
+                    // Mayoritas alat scan bekerja sebagai "keyboard wedge": mengetik hasil scan
+                    // sebagai karakter biasa ke field yang sedang fokus, lalu mengirim tombol
+                    // Enter di akhir. Karena field ini singleLine, Android memperlakukan Enter
+                    // itu sebagai aksi IME "Done" (bukan baris baru) -- jadi cukup tangkap di
+                    // sini agar kompatibel dengan hampir semua merek scanner tanpa SDK khusus.
+                    // Kita SENGAJA tidak memanggil defaultKeyboardAction(), supaya keyboard/
+                    // fokus tidak hilang setelah tiap scan -- kasir bisa langsung scan item
+                    // berikutnya beruntun tanpa menyentuh layar lagi.
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        val code = uiState.searchQuery.trim()
+                        if (code.isNotEmpty()) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.addToCartBySku(code)
+                            viewModel.onSearchQueryChange("")
+                        }
+                    })
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
