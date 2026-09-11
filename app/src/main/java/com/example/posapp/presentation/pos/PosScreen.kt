@@ -94,8 +94,11 @@ fun PosScreen(
     val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
     val uiState by viewModel.uiState.collectAsState()
     val lastReceipt by viewModel.lastReceipt.collectAsState()
+    val parkedSales by viewModel.parkedSales.collectAsState()
     var showPaymentSheet by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showParkDialog by remember { mutableStateOf(false) }
+    var showParkedListDialog by remember { mutableStateOf(false) }
     var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     // Overlay centang animasi setelah checkout sukses (menggantikan Snackbar teks polos yang
@@ -304,6 +307,23 @@ fun PosScreen(
                 CartSummary(cart = uiState.cart)
 
                 Spacer(Modifier.height(8.dp))
+                // Tahan Transaksi (v15) — pelanggan belum selesai memilih/bayar, kasir bisa
+                // langsung melayani orang lain tanpa kehilangan keranjang yang sedang disusun.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (!uiState.cart.isEmpty) {
+                        OutlinedButton(onClick = { showParkDialog = true }, modifier = Modifier.weight(1f)) {
+                            Text("Tahan")
+                        }
+                    }
+                    if (parkedSales.isNotEmpty()) {
+                        OutlinedButton(onClick = { showParkedListDialog = true }, modifier = Modifier.weight(1f)) {
+                            Text("Tertahan (${parkedSales.size})")
+                        }
+                    }
+                }
+                if (!uiState.cart.isEmpty || parkedSales.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                }
                 Button(
                     onClick = { showPaymentSheet = true },
                     modifier = Modifier.fillMaxWidth(),
@@ -320,6 +340,28 @@ fun PosScreen(
                 }
             }
         }
+    }
+
+    if (showParkDialog) {
+        ParkSaleDialog(
+            onDismiss = { showParkDialog = false },
+            onConfirm = { note ->
+                viewModel.parkCurrentSale(note)
+                showParkDialog = false
+            }
+        )
+    }
+
+    if (showParkedListDialog) {
+        ParkedSalesDialog(
+            parkedSales = parkedSales,
+            onDismiss = { showParkedListDialog = false },
+            onRestore = { id ->
+                viewModel.restoreParkedSale(id)
+                showParkedListDialog = false
+            },
+            onDiscard = { id -> viewModel.discardParkedSale(id) }
+        )
     }
 
     variantPickerProduct?.let { product ->
@@ -680,6 +722,13 @@ private fun CartSummary(cart: Cart) {
         if (cart.loyaltyDiscount > 0) {
             SummaryRow("Poin Loyalitas (${cart.loyaltyPointsRedeemed} poin)", "- " + rupiah.format(cart.loyaltyDiscount))
         }
+        val totalPromoDiscount = cart.promoDiscount + cart.lines.sumOf { it.promoDiscount }
+        if (totalPromoDiscount > 0) {
+            SummaryRow(
+                "Promo (${cart.appliedPromoNames.joinToString(", ")})",
+                "- " + rupiah.format(totalPromoDiscount)
+            )
+        }
         if (cart.taxPercent > 0.0) {
             SummaryRow("Pajak (${formatPercent(cart.taxPercent)}%)", rupiah.format(cart.taxAmount))
         }
@@ -696,6 +745,100 @@ private fun SummaryRow(label: String, value: String, emphasize: Boolean = false)
     ) {
         Text(label, fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal)
         Text(value, fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+/** Dialog catatan opsional saat menahan transaksi (v15) — lihat PosViewModel.parkCurrentSale. */
+@Composable
+private fun ParkSaleDialog(onDismiss: () -> Unit, onConfirm: (note: String?) -> Unit) {
+    var note by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Tahan Transaksi") },
+        text = {
+            Column {
+                Text(
+                    "Keranjang saat ini akan disimpan sementara dan dikosongkan, supaya kamu bisa melayani pelanggan lain dulu.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Catatan (opsional)") },
+                    placeholder = { Text("Contoh: Bu Sari, masih pilih baju") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(note.takeIf { it.isNotBlank() }) }) { Text("Tahan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
+    )
+}
+
+/** Daftar transaksi tertahan (v15) — lihat PosViewModel.restoreParkedSale/discardParkedSale. */
+@Composable
+private fun ParkedSalesDialog(
+    parkedSales: List<com.example.posapp.data.local.entity.ParkedSaleEntity>,
+    onDismiss: () -> Unit,
+    onRestore: (Long) -> Unit,
+    onDiscard: (Long) -> Unit
+) {
+    var pendingDiscard by remember { mutableStateOf<Long?>(null) }
+    val dateFormat = remember { java.text.SimpleDateFormat("dd MMM, HH:mm", Locale("in", "ID")) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transaksi Tertahan") },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(parkedSales, key = { it.id }) { parked ->
+                    Card {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        parked.customerName ?: "${parked.itemCount} item",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "${dateFormat.format(java.util.Date(parked.createdAt))} · ${rupiah.format(parked.estimatedTotal)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    parked.note?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { onRestore(parked.id) }) { Text("Lanjutkan") }
+                                OutlinedButton(onClick = { pendingDiscard = parked.id }) { Text("Hapus") }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
+    )
+
+    pendingDiscard?.let { id ->
+        AlertDialog(
+            onDismissRequest = { pendingDiscard = null },
+            title = { Text("Hapus Transaksi Tertahan") },
+            text = { Text("Transaksi ini akan hilang permanen (bukan dibatalkan sebagai penjualan — memang belum pernah tersimpan sebagai transaksi).") },
+            confirmButton = {
+                TextButton(onClick = { onDiscard(id); pendingDiscard = null }) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingDiscard = null }) { Text("Batal") } }
+        )
     }
 }
 

@@ -1,9 +1,12 @@
 package com.example.posapp
 
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.input.pointer.pointerInput
@@ -95,8 +98,22 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sessionManager: SessionManager
     @Inject lateinit var autoLockManager: AutoLockManager
 
+    // Izin notifikasi (Android 13+, v15) untuk LowStockNotificationWorker — diminta sekali di
+    // sini (fire-and-forget, tidak memblokir alur login/kasir sama sekali) karena tidak ada
+    // momen "natural" lain di app single-activity ini untuk memintanya sebelum worker pertama
+    // kali jalan. Kalau ditolak, worker tetap aman (fail-soft, lihat LowStockNotificationWorker) —
+    // hanya berarti tidak ada notifikasi proaktif, kartu Stok Tipis di Dashboard tetap berfungsi.
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         enableEdgeToEdge()
         setContent {
             val storeViewModel: StoreProfileViewModel = hiltViewModel()
@@ -443,7 +460,9 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                         onOpenSuppliers = { navController.navigate("suppliers") },
                         onOpenPaymentGateway = { navController.navigate("payment_gateway") },
                         onOpenLicense = { navController.navigate("license_status") },
-                        onOpenOutletStockCheck = { navController.navigate("outlet_stock_check") }
+                        onOpenOutletStockCheck = { navController.navigate("outlet_stock_check") },
+                        onOpenPromo = { navController.navigate("promo") },
+                        onOpenLabelPrint = { navController.navigate("label_print") }
                     )
                 }
             }
@@ -504,6 +523,23 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                 RoleGatedRoute(allowed = allowed, navController = navController) {
                     com.example.posapp.presentation.settings.SupplierScreen(onBack = { navController.popBackStack() })
                 }
+            }
+        }
+        composable("promo") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Kelola Promo/Diskon otomatis (v15) — ADMIN & MANAGER, lihat Permission.canManagePromos.
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canManagePromos(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    com.example.posapp.presentation.promo.PromoScreen(onBack = { navController.popBackStack() })
+                }
+            }
+        }
+        composable("label_print") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                // Cetak Label Harga/Barcode (v15) — terbuka untuk semua kasir yang bisa masuk
+                // Kasir/Produk, sama seperti Stok: tidak mengubah data sensitif, cuma mencetak.
+                com.example.posapp.presentation.label.LabelPrintScreen(onBack = { navController.popBackStack() })
             }
         }
         composable("cloud_sync") {

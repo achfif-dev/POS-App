@@ -68,6 +68,8 @@ fun StoreProfileScreen(
     var address by remember(profile.address) { mutableStateOf(profile.address) }
     var phone by remember(profile.phone) { mutableStateOf(profile.phone) }
     var footer by remember(profile.receiptFooter) { mutableStateOf(profile.receiptFooter) }
+    var bonDueDaysInput by remember(profile.bonDueDays) { mutableStateOf(profile.bonDueDays.toString()) }
+    var receiptHeaderNoteInput by remember(profile.receiptHeaderNote) { mutableStateOf(profile.receiptHeaderNote) }
 
     val qrisPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -252,6 +254,13 @@ fun StoreProfileScreen(
                         checked = profile.supplierPoEnabled,
                         onCheckedChange = viewModel::setSupplierPoEnabled
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                    FeatureToggleRow(
+                        title = "Notifikasi Stok Menipis",
+                        description = "Kirim notifikasi sistem Android kalau ada produk stok tipis (dicek tiap beberapa jam)",
+                        checked = profile.lowStockNotificationsEnabled,
+                        onCheckedChange = viewModel::setLowStockNotificationsEnabled
+                    )
 
                     HorizontalDivider(Modifier.padding(vertical = 16.dp))
                     Row(
@@ -306,6 +315,63 @@ fun StoreProfileScreen(
                             enabled = loyaltyRupiahPerPointInput.toLongOrNull() != null && loyaltyPointValueInput.toLongOrNull() != null
                         ) { Text("Simpan Pengaturan Poin") }
                     }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Text("Piutang (BON)", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Berapa hari setelah transaksi BON dianggap jatuh tempo — dipakai layar Piutang Jatuh Tempo",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = bonDueDaysInput,
+                        onValueChange = { bonDueDaysInput = it.filter { c -> c.isDigit() } },
+                        label = { Text("Jatuh tempo (hari)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Button(
+                        onClick = { viewModel.updateBonDueDays(bonDueDaysInput.toIntOrNull() ?: profile.bonDueDays) },
+                        enabled = bonDueDaysInput.toIntOrNull() != null
+                    ) { Text("Simpan") }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Text("Kustomisasi Struk", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(12.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    FeatureToggleRow(
+                        title = "Tampilkan SKU per Item",
+                        description = "Cetak SKU/barcode di bawah nama tiap item pada struk & PDF invoice",
+                        checked = profile.receiptShowSku,
+                        onCheckedChange = { viewModel.updateReceiptCustomization(it, receiptHeaderNoteInput) }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                    OutlinedTextField(
+                        value = receiptHeaderNoteInput,
+                        onValueChange = { receiptHeaderNoteInput = it },
+                        label = { Text("Catatan di Bawah Alamat Toko") },
+                        placeholder = { Text("Contoh: Buka 08:00 - 21:00") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { viewModel.updateReceiptCustomization(profile.receiptShowSku, receiptHeaderNoteInput) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Simpan Catatan Struk") }
                 }
             }
 

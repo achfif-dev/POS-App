@@ -66,8 +66,18 @@ class CheckoutUseCase @Inject constructor(
             )
         }
 
+        // dueDate (v15) hanya diisi untuk baris BON — dipakai Reminder Piutang Jatuh Tempo.
+        // Diambil sekali di sini (bukan per baris) karena semua baris BON dalam satu transaksi
+        // yang sama wajar punya tenggat yang sama.
+        val bonDueDays = storeProfileRepository.profile.first().bonDueDays
+        val bonDueDate = System.currentTimeMillis() + bonDueDays.coerceAtLeast(1) * 24L * 60 * 60 * 1000
         val paymentEntities = validPayments.map {
-            TransactionPaymentEntity(transactionId = 0, method = it.method, amount = it.amount)
+            TransactionPaymentEntity(
+                transactionId = 0,
+                method = it.method,
+                amount = it.amount,
+                dueDate = if (it.method == PaymentMethod.BON) bonDueDate else null
+            )
         }
 
         // `transactions.invoiceNumber` punya unique index di DB (lihat Migrations.kt). Nomor

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.local.dao.CustomerWithDebt
+import com.example.posapp.data.local.dao.OverdueDebtor
 import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.DebtPaymentEntity
 import com.example.posapp.data.repository.CustomerRepository
@@ -27,6 +28,10 @@ class CustomerListViewModel @Inject constructor(
 ) : ViewModel() {
 
     val customers: StateFlow<List<CustomerWithDebt>> = customerRepository.observeAllWithDebt()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Piutang yang sudah lewat jatuh tempo (v15) — lihat StoreProfile.bonDueDays. */
+    val overdueDebtors: StateFlow<List<OverdueDebtor>> = customerRepository.observeOverdueDebtors()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _events = MutableSharedFlow<CustomerEvent>()

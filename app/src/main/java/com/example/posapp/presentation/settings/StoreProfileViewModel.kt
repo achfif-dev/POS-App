@@ -212,4 +212,24 @@ class StoreProfileViewModel @Inject constructor(
     fun setSupplierPoEnabled(enabled: Boolean) {
         viewModelScope.launch { storeProfileRepository.setSupplierPoEnabled(enabled) }
     }
+
+    fun setLowStockNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch { storeProfileRepository.setLowStockNotificationsEnabled(enabled) }
+    }
+
+    /** Jangka waktu (hari) sebelum piutang BON dianggap jatuh tempo — dipakai transaksi BON
+     * BERIKUTNYA, tidak mengubah dueDate transaksi yang sudah tersimpan. */
+    fun updateBonDueDays(days: Int) {
+        viewModelScope.launch {
+            storeProfileRepository.updateBonDueDays(days)
+            _events.emit(StoreProfileEvent.ShowMessage("Jangka waktu jatuh tempo BON diperbarui"))
+        }
+    }
+
+    fun updateReceiptCustomization(showSku: Boolean, headerNote: String) {
+        viewModelScope.launch {
+            storeProfileRepository.updateReceiptCustomization(showSku, headerNote)
+            _events.emit(StoreProfileEvent.ShowMessage("Tampilan struk diperbarui"))
+        }
+    }
 }

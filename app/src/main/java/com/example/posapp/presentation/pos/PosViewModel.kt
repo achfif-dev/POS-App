@@ -7,18 +7,23 @@ import com.example.posapp.data.export.FileShareHelper
 import com.example.posapp.data.export.PdfInvoiceGenerator
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.CustomerEntity
+import com.example.posapp.data.local.entity.ParkedSaleEntity
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.UserRole
 import com.example.posapp.data.local.entity.CategoryEntity
+import com.example.posapp.data.local.entity.PromoEntity
 import com.example.posapp.data.printer.PrintResult
 import com.example.posapp.data.printer.PrinterRepository
 import com.example.posapp.data.printer.toPrinterConfig
 import com.example.posapp.data.repository.CategoryRepository
 import com.example.posapp.data.repository.CustomerRepository
+import com.example.posapp.data.repository.ParkedSaleRepository
 import com.example.posapp.data.repository.ProductRepository
+import com.example.posapp.data.repository.PromoRepository
+import com.example.posapp.data.repository.RestoreParkedSaleResult
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfile
 import com.example.posapp.data.settings.StoreProfileRepository
@@ -78,7 +83,9 @@ class PosViewModel @Inject constructor(
     private val storeProfileRepository: StoreProfileRepository,
     private val sessionManager: SessionManager,
     private val customerRepository: CustomerRepository,
-    private val cloudSyncRepository: CloudSyncRepository
+    private val cloudSyncRepository: CloudSyncRepository,
+    private val promoRepository: PromoRepository,
+    private val parkedSaleRepository: ParkedSaleRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -101,7 +108,8 @@ class PosViewModel @Inject constructor(
         _cart,
         _isProcessing,
         storeProfileRepository.profile,
-        sessionManager.currentUser
+        sessionManager.currentUser,
+        promoRepository.observeAll()
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val products = values[0] as List<ProductEntity>
@@ -109,10 +117,21 @@ class PosViewModel @Inject constructor(
         val categories = values[1] as List<CategoryEntity>
         val query = values[2] as String
         val categoryId = values[3] as Long?
-        val cart = values[4] as Cart
+        val rawCart = values[4] as Cart
         val processing = values[5] as Boolean
         val profile = values[6] as StoreProfile
         val user = values[7] as com.example.posapp.data.local.entity.UserEntity?
+        @Suppress("UNCHECKED_CAST")
+        val promos = values[8] as List<PromoEntity>
+        // Promo diterapkan di sini (bukan di dalam mutator _cart) supaya keranjang "mentah" yang
+        // diedit kasir (addToCart, updateQuantity, dst.) tetap sumber kebenaran tunggal — promo
+        // selalu DIHITUNG ULANG dari nol setiap kali baris/promo berubah, tidak pernah "menempel"
+        // secara stateful. Kalau fitur promo nonaktif, kirim daftar kosong -> PromoEngine otomatis
+        // membersihkan sisa potongan promo lama (mis. baru saja dimatikan admin di tengah transaksi).
+        val cart = com.example.posapp.domain.usecase.PromoEngine.apply(
+            rawCart,
+            if (profile.promoEnabled) promos else emptyList()
+        )
         PosUiState(
             products = products,
             categoryNamesById = categories.associate { it.id to it.name },
@@ -126,6 +145,10 @@ class PosViewModel @Inject constructor(
             canManageProducts = com.example.posapp.domain.auth.Permission.canManageProducts(user, profile.pinLoginEnabled)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PosUiState())
+
+    /** Daftar transaksi yang sedang ditahan (v15) — lihat ParkedSaleRepository. */
+    val parkedSales: StateFlow<List<ParkedSaleEntity>> = parkedSaleRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Daftar pelanggan aktif, dipakai untuk memilih pelanggan saat metode Bon/Piutang dipakai. */
     val customers: StateFlow<List<CustomerEntity>> = customerRepository.observeAll()
@@ -155,6 +178,7 @@ class PosViewModel @Inject constructor(
         val receipt = _lastReceipt.value ?: return
         val profile = uiState.value.storeProfile
         viewModelScope.launch {
+            val skuMap = if (profile.receiptShowSku) buildSkuMap(receipt.second) else emptyMap()
             val result = withContext(Dispatchers.IO) {
                 printerRepository.printReceipt(
                     storeName = profile.name,
@@ -164,7 +188,10 @@ class PosViewModel @Inject constructor(
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
                     language = profile.receiptLanguage,
-                    printerConfig = profile.toPrinterConfig()
+                    printerConfig = profile.toPrinterConfig(),
+                    headerNote = profile.receiptHeaderNote,
+                    showSku = profile.receiptShowSku,
+                    skuByProductId = skuMap
                 )
             }
             when (result) {
@@ -178,6 +205,7 @@ class PosViewModel @Inject constructor(
         val receipt = _lastReceipt.value ?: return
         val profile = uiState.value.storeProfile
         viewModelScope.launch {
+            val skuMap = if (profile.receiptShowSku) buildSkuMap(receipt.second) else emptyMap()
             val file = withContext(Dispatchers.IO) {
                 pdfInvoiceGenerator.generate(
                     storeName = profile.name,
@@ -186,12 +214,23 @@ class PosViewModel @Inject constructor(
                     storeAddress = profile.address,
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
-                    language = profile.receiptLanguage
+                    language = profile.receiptLanguage,
+                    headerNote = profile.receiptHeaderNote,
+                    showSku = profile.receiptShowSku,
+                    skuByProductId = skuMap
                 )
             }
             _events.emit(PosEvent.PdfReady(file))
         }
     }
+
+    /** SKU per productId, hanya di-lookup kalau StoreProfile.receiptShowSku aktif (v15) — SKU
+     * TIDAK disimpan sebagai snapshot di TransactionItemEntity (produk bisa berganti SKU setelah
+     * transaksi lama), jadi ini SELALU SKU produk yang berlaku SEKARANG, bukan snapshot historis. */
+    private suspend fun buildSkuMap(items: List<TransactionItemEntity>): Map<Long, String> =
+        items.map { it.productId }.distinct().mapNotNull { productId ->
+            productRepository.findById(productId)?.let { productId to it.sku }
+        }.toMap()
 
     fun createShareIntent(file: File) = fileShareHelper.createShareIntent(file, "application/pdf")
 
@@ -316,7 +355,11 @@ class PosViewModel @Inject constructor(
         viewModelScope.launch {
             _isProcessing.value = true
             val cashierName = sessionManager.currentUser.value?.name
-            when (val result = checkoutUseCase(_cart.value, payments, note = _cart.value.tableTag, cashierName = cashierName, customerId = customerId)) {
+            // Pakai cart dari uiState (SUDAH termasuk potongan promo otomatis, lihat combine di
+            // atas), bukan _cart.value mentah -- supaya nominal yang benar-benar ditagih SAMA
+            // PERSIS dengan yang terakhir dilihat kasir di layar, termasuk promonya.
+            val effectiveCart = uiState.value.cart
+            when (val result = checkoutUseCase(effectiveCart, payments, note = effectiveCart.tableTag, cashierName = cashierName, customerId = customerId)) {
                 is CheckoutResult.Success -> {
                     _lastReceipt.value = transactionRepository.getTransactionWithItems(result.transactionId)
                     _events.emit(PosEvent.CheckoutSuccess(result.transactionId, result.invoiceNumber, result.change))
@@ -328,6 +371,52 @@ class PosViewModel @Inject constructor(
                 }
             }
             _isProcessing.value = false
+        }
+    }
+
+    /** Tahan keranjang saat ini (v15) — pelanggan belum selesai memilih/bayar, kasir bisa
+     * langsung melayani orang lain. Keranjang dikosongkan setelah berhasil ditahan. */
+    fun parkCurrentSale(note: String?, customerId: Long? = null, customerName: String? = null) {
+        viewModelScope.launch {
+            val cashierName = sessionManager.currentUser.value?.name ?: "Kasir"
+            val parked = parkedSaleRepository.park(uiState.value.cart, note, customerId, customerName, cashierName)
+            if (parked) {
+                clearCart()
+                _events.emit(PosEvent.ShowMessage("Transaksi ditahan"))
+            } else {
+                _events.emit(PosEvent.ShowMessage("Keranjang masih kosong, tidak ada yang ditahan"))
+            }
+        }
+    }
+
+    /** Lanjutkan transaksi yang ditahan. Hanya bisa kalau keranjang SEKARANG kosong -- supaya
+     * keranjang yang sedang disusun kasir tidak tertimpa diam-diam. */
+    fun restoreParkedSale(id: Long) {
+        if (!_cart.value.isEmpty) {
+            viewModelScope.launch { _events.emit(PosEvent.ShowMessage("Selesaikan/tahan dulu keranjang yang sedang berjalan sebelum melanjutkan transaksi lain")) }
+            return
+        }
+        viewModelScope.launch {
+            when (val result = parkedSaleRepository.restore(id)) {
+                is RestoreParkedSaleResult.Success -> {
+                    val profile = uiState.value.storeProfile
+                    val effectiveTax = if (profile.taxEnabled) profile.taxPercent else 0.0
+                    _cart.value = result.cart.copy(taxPercent = effectiveTax)
+                    if (result.skippedItemNames.isNotEmpty()) {
+                        _events.emit(PosEvent.ShowMessage("Transaksi dilanjutkan. Produk berikut dilewati karena sudah tidak tersedia: ${result.skippedItemNames.joinToString(", ")}"))
+                    } else {
+                        _events.emit(PosEvent.ShowMessage("Transaksi dilanjutkan"))
+                    }
+                }
+                is RestoreParkedSaleResult.Error -> _events.emit(PosEvent.ShowMessage(result.message))
+            }
+        }
+    }
+
+    fun discardParkedSale(id: Long) {
+        viewModelScope.launch {
+            parkedSaleRepository.discard(id)
+            _events.emit(PosEvent.ShowMessage("Transaksi tertahan dihapus"))
         }
     }
 

@@ -76,6 +76,7 @@ class ReportViewModel @Inject constructor(
     private val pdfInvoiceGenerator: PdfInvoiceGenerator,
     private val fileShareHelper: FileShareHelper,
     private val storeProfileRepository: StoreProfileRepository,
+    private val productRepository: com.example.posapp.data.repository.ProductRepository,
     private val auditLogRepository: com.example.posapp.data.repository.AuditLogRepository
 ) : ViewModel() {
 
@@ -308,6 +309,11 @@ class ReportViewModel @Inject constructor(
         val detail = _detailState.value ?: return
         viewModelScope.launch {
             val profile = storeProfileRepository.profile.first()
+            val skuMap = if (profile.receiptShowSku) {
+                detail.items.map { it.productId }.distinct()
+                    .mapNotNull { productId -> productRepository.findById(productId)?.let { productId to it.sku } }
+                    .toMap()
+            } else emptyMap()
             val result = withContext(Dispatchers.IO) {
                 printerRepository.printReceipt(
                     storeName = profile.name,
@@ -317,7 +323,10 @@ class ReportViewModel @Inject constructor(
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
                     language = profile.receiptLanguage,
-                    printerConfig = profile.toPrinterConfig()
+                    printerConfig = profile.toPrinterConfig(),
+                    headerNote = profile.receiptHeaderNote,
+                    showSku = profile.receiptShowSku,
+                    skuByProductId = skuMap
                 )
             }
             when (result) {
@@ -332,6 +341,11 @@ class ReportViewModel @Inject constructor(
         val detail = _detailState.value ?: return
         viewModelScope.launch {
             val profile = storeProfileRepository.profile.first()
+            val skuMap = if (profile.receiptShowSku) {
+                detail.items.map { it.productId }.distinct()
+                    .mapNotNull { productId -> productRepository.findById(productId)?.let { productId to it.sku } }
+                    .toMap()
+            } else emptyMap()
             val file = withContext(Dispatchers.IO) {
                 pdfInvoiceGenerator.generate(
                     storeName = profile.name,
@@ -340,7 +354,10 @@ class ReportViewModel @Inject constructor(
                     storeAddress = profile.address,
                     receiptFooter = profile.receiptFooter,
                     logoImagePath = profile.logoImagePath,
-                    language = profile.receiptLanguage
+                    language = profile.receiptLanguage,
+                    headerNote = profile.receiptHeaderNote,
+                    showSku = profile.receiptShowSku,
+                    skuByProductId = skuMap
                 )
             }
             _events.emit(ReportEvent.PdfReady(file))

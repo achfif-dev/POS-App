@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Storefront
@@ -48,7 +50,9 @@ fun SettingsScreen(
     onOpenSuppliers: () -> Unit = {},
     onOpenPaymentGateway: () -> Unit = {},
     onOpenLicense: () -> Unit = {},
-    onOpenOutletStockCheck: () -> Unit = {}
+    onOpenOutletStockCheck: () -> Unit = {},
+    onOpenPromo: () -> Unit = {},
+    onOpenLabelPrint: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val autoLockManager = com.example.posapp.data.auth.LocalAutoLockManager.current
@@ -170,6 +174,24 @@ fun SettingsScreen(
                     label = "Beban Usaha",
                     description = "Atur Sewa, Gaji, Listrik, dll untuk hitung Laba Bersih (khusus Admin)",
                     onClick = onOpenExpenses
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SettingsSection(title = "Penjualan Lanjutan") {
+                SettingsNavRow(
+                    icon = Icons.Default.LocalOffer,
+                    label = "Promo & Diskon Otomatis",
+                    description = "Diskon minimal belanja, per kategori, atau beli-X-gratis-Y — otomatis di kasir",
+                    onClick = onOpenPromo
+                )
+                HorizontalDivider()
+                SettingsNavRow(
+                    icon = Icons.Default.Print,
+                    label = "Cetak Label Harga/Barcode",
+                    description = "Cetak label harga & barcode produk lewat printer thermal",
+                    onClick = onOpenLabelPrint
                 )
             }
 

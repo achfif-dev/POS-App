@@ -66,6 +66,15 @@ object Permission {
     fun canPerformStockOpname(user: UserEntity?, pinLoginEnabled: Boolean): Boolean =
         isAdminOrPinDisabled(user, pinLoginEnabled)
 
+    // Kelola Promo/Diskon otomatis (v15) — level sama seperti Manajemen Produk: mengubah aturan
+    // ini memengaruhi margin toko secara luas (bukan cuma satu produk), jadi ADMIN & MANAGER
+    // boleh, KASIR tidak. PromoEngine yang MENERAPKAN promo ke keranjang jalan untuk semua kasir
+    // (itu bagian normal alur jual-beli, bukan pengaturan) — ini murni guard layar Kelola Promo.
+    fun canManagePromos(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
+        if (!pinLoginEnabled) return true
+        return user?.role == UserRole.ADMIN || user?.role == UserRole.MANAGER
+    }
+
     private fun isAdminOrPinDisabled(user: UserEntity?, pinLoginEnabled: Boolean): Boolean {
         if (!pinLoginEnabled) return true
         return user?.role == UserRole.ADMIN

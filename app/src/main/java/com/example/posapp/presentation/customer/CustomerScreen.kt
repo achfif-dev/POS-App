@@ -1,27 +1,36 @@
 package com.example.posapp.presentation.customer
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.posapp.data.auth.LocalAutoLockManager
 import com.example.posapp.data.local.dao.CustomerWithDebt
+import com.example.posapp.data.local.dao.OverdueDebtor
 import com.example.posapp.presentation.theme.PosBrandedTopBar
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
+private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
 
 /**
  * Daftar pelanggan + saldo piutang berjalan (dihitung otomatis dari transaksi Bon dikurangi
@@ -37,8 +46,10 @@ fun CustomerScreen(
     onOpenDetail: (Long) -> Unit = {}
 ) {
     val customers by viewModel.customers.collectAsState()
+    val overdueDebtors by viewModel.overdueDebtors.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showOverdueSection by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -70,6 +81,15 @@ fun CustomerScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+                if (overdueDebtors.isNotEmpty()) {
+                    item {
+                        OverdueDebtorsBanner(
+                            debtors = overdueDebtors,
+                            expanded = showOverdueSection,
+                            onToggleExpanded = { showOverdueSection = !showOverdueSection }
+                        )
+                    }
+                }
                 items(customers, key = { it.id }) { customer ->
                     CustomerRow(customer = customer, onClick = { onOpenDetail(customer.id) })
                     HorizontalDivider()
@@ -86,6 +106,81 @@ fun CustomerScreen(
                 showAddDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun OverdueDebtorsBanner(
+    debtors: List<OverdueDebtor>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit
+) {
+    val context = LocalContext.current
+    val autoLockManager = LocalAutoLockManager.current
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onToggleExpanded)
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${debtors.size} pelanggan piutangnya sudah jatuh tempo",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(if (expanded) "Tutup" else "Lihat", color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                debtors.forEach { debtor ->
+                    Column(Modifier.padding(vertical = 6.dp)) {
+                        Text(
+                            debtor.customerName,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            "${rupiah.format(debtor.debtBalance)} — jatuh tempo sejak ${dateFormat.format(Date(debtor.earliestDueDate))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        val phone = debtor.customerPhone
+                        if (!phone.isNullOrBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val text = "Halo ${debtor.customerName}, mengingatkan piutang belanja sebesar " +
+                                        "${rupiah.format(debtor.debtBalance)} sudah jatuh tempo. Mohon segera dilunasi, terima kasih."
+                                    val normalized = phone.replace(Regex("[^0-9+]"), "")
+                                        .let { if (it.startsWith("0")) "62" + it.substring(1) else it }
+                                        .removePrefix("+")
+                                    autoLockManager.expectExternalActivityReturn()
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW).apply {
+                                                data = android.net.Uri.parse("https://wa.me/$normalized?text=${android.net.Uri.encode(text)}")
+                                            }
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Ingatkan via WhatsApp")
+                            }
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
     }
 }
 

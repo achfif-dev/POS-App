@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.example.posapp.data.license.LicenseRepository
 import com.example.posapp.data.license.LicenseSyncWorker
+import com.example.posapp.data.notification.LowStockNotificationWorker
 import com.example.posapp.data.sync.OutletCatalogSyncWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,7 @@ class PosApplication : Application(), Configuration.Provider {
         // Idempotent (KEEP policy) — aman dipanggil setiap kali app start tanpa membuat job dobel.
         LicenseSyncWorker.schedule(this)
         OutletCatalogSyncWorker.schedule(this)
+        LowStockNotificationWorker.schedule(this)
     }
 
     override val workManagerConfiguration: Configuration
