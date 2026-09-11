@@ -44,8 +44,14 @@ service cloud.firestore {
     // menulis status pembayaran WAJIB lewat Cloud Function createQrisCharge (status awal) dan
     // midtransNotification (webhook, pakai Admin SDK yang otomatis melewati rules ini) — kalau
     // client bisa menulis, siapa pun bisa memalsukan status "SETTLED" tanpa benar-benar membayar.
+    // TEMUAN KEAMANAN (audit ulang): sebelumnya "allow read: if true" -- bisa dibaca (termasuk
+    // di-list seluruh koleksinya) oleh siapa pun tanpa sign-in sama sekali, beda dari koleksi
+    // lain di file ini yang minimal mensyaratkan request.auth != null. Order ID + status lunas/
+    // belum lintas SEMUA toko jadi bisa dibaca publik. App ini sudah sign-in anonim sebelum
+    // memanggil createQrisCharge (lihat CloudSyncRepository/PaymentGatewayRepository), jadi
+    // mensyaratkan auth di sini tidak mengubah perilaku normal app, hanya menutup akses publik.
     match /payment_status/{orderId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
