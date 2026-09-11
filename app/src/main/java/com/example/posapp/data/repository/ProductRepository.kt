@@ -25,6 +25,13 @@ class ProductRepository @Inject constructor(
 
     suspend fun findBySku(sku: String): ProductEntity? = productDao.findBySku(sku)
 
+    /** Dipakai ParkedSaleRepository.restore (v15) untuk memuat ulang data produk TERBARU (harga/
+     * stok bisa sudah berubah sejak transaksi ditahan) dari productId yang tersimpan. */
+    suspend fun findById(id: Long): ProductEntity? = productDao.findById(id)
+
+    /** Dipakai ParkedSaleRepository.restore (v15), lihat [findById]. */
+    suspend fun findVariantById(id: Long): ProductVariantEntity? = productVariantDao.findById(id)
+
     suspend fun upsert(product: ProductEntity): Long =
         if (product.id == 0L) productDao.insert(product) else {
             productDao.update(product); product.id

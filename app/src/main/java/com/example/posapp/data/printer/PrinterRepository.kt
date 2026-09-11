@@ -15,10 +15,13 @@ import com.dantsu.escposprinter.connection.tcp.TcpConnection
 import com.dantsu.escposprinter.connection.usb.UsbPrintersConnections
 import com.dantsu.escposprinter.textparser.PrinterTextParserImg
 import com.example.posapp.data.local.entity.PaymentMethod
+import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.export.ReceiptStrings
 import com.example.posapp.data.settings.StoreProfile
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -148,7 +151,10 @@ class PrinterRepository @Inject constructor(
         receiptFooter: String = "Terima kasih!",
         logoImagePath: String? = null,
         language: String = "id",
-        printerConfig: PrinterConfig = PrinterConfig()
+        printerConfig: PrinterConfig = PrinterConfig(),
+        headerNote: String = "",
+        showSku: Boolean = false,
+        skuByProductId: Map<Long, String> = emptyMap()
     ): PrintResult {
         val strings = ReceiptStrings.forLanguage(language)
         if (printerConfig.type == PrinterConnectionType.BLUETOOTH &&
@@ -187,6 +193,7 @@ class PrinterRepository @Inject constructor(
             }
             sb.append("[C]<b>$storeName</b>\n")
             if (storeAddress.isNotBlank()) sb.append("[C]$storeAddress\n")
+            if (headerNote.isNotBlank()) sb.append("[C]$headerNote\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[L]No: ${transaction.invoiceNumber}\n")
             transaction.note?.takeIf { it.isNotBlank() }?.let { sb.append("[L]Meja/Pesanan: $it\n") }
@@ -195,6 +202,11 @@ class PrinterRepository @Inject constructor(
 
             items.forEach { item ->
                 sb.append("[L]${item.productNameSnapshot}\n")
+                if (showSku) {
+                    skuByProductId[item.productId]?.takeIf { it.isNotBlank() }?.let { sku ->
+                        sb.append("[L]SKU: $sku\n")
+                    }
+                }
                 sb.append("[L]${item.quantity} ${item.unitSnapshot} x ${rupiah.format(item.priceSnapshot)}[R]${rupiah.format(item.lineTotal)}\n")
             }
 
@@ -216,6 +228,77 @@ class PrinterRepository @Inject constructor(
             PrintResult.Success
         } catch (e: Exception) {
             PrintResult.Error(e.message ?: "Gagal mencetak struk. Pastikan printer menyala dan terhubung.")
+        }
+    }
+
+    /**
+     * Cetak SATU label harga/barcode untuk [product] (v15) — dipanggil berulang oleh
+     * LabelPrintViewModel kalau kasir minta beberapa lembar/produk sekaligus, karena library
+     * ESC/POS ini mencetak per-perintah (tidak ada API "cetak N salinan" bawaan).
+     *
+     * Barcode digambar sendiri lewat ZXing (Code 128, dari [ProductEntity.sku]) lalu dicetak
+     * sebagai gambar mentah — pola SAMA seperti logo toko di [printReceipt] — dan BUKAN lewat
+     * tag `<barcode>` bawaan parser DantSu, supaya perilakunya konsisten & sudah terbukti bekerja
+     * di codebase ini (lihat cara logo dicetak) daripada bergantung ke fitur library yang belum
+     * pernah dipakai/diuji di sini.
+     */
+    fun printLabel(
+        storeName: String,
+        product: ProductEntity,
+        printerConfig: PrinterConfig = PrinterConfig()
+    ): PrintResult {
+        if (printerConfig.type == PrinterConnectionType.BLUETOOTH &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
+        }
+        return try {
+            val connection = resolveConnection(printerConfig) ?: return PrintResult.Error(
+                when (printerConfig.type) {
+                    PrinterConnectionType.BLUETOOTH -> "Tidak ada printer Bluetooth yang terpasang/di-pair"
+                    PrinterConnectionType.LAN -> "Isi alamat IP printer LAN/WiFi dulu di Pengaturan > Profil Toko"
+                    PrinterConnectionType.USB -> "Tidak ada printer USB yang terdeteksi. Cek kabel OTG & izin akses USB."
+                }
+            )
+            val charsPerLine = if (printerConfig.paperWidthMm >= 70f) 48 else 32
+            val printer = EscPosPrinter(connection, 203, printerConfig.paperWidthMm, charsPerLine)
+
+            val barcodeWidth = if (printerConfig.paperWidthMm >= 70f) 380 else 260
+            val barcodeBitmap = generateBarcodeBitmap(product.sku, barcodeWidth, 100)
+                ?: return PrintResult.Error("SKU/barcode produk ini tidak valid untuk dicetak sebagai barcode")
+
+            val sb = StringBuilder()
+            sb.append("[C]$storeName\n")
+            sb.append("[C]<b>${product.name}</b>\n")
+            sb.append("[C]${rupiah.format(product.sellPrice)}\n")
+            sb.append("[C]<img>${PrinterTextParserImg.bitmapToHexadecimalString(printer, barcodeBitmap)}</img>\n")
+            sb.append("[C]${product.sku}\n")
+            sb.append("[L]\n")
+
+            printer.printFormattedTextAndCut(sb.toString())
+            PrintResult.Success
+        } catch (e: Exception) {
+            PrintResult.Error(e.message ?: "Gagal mencetak label. Pastikan printer menyala dan terhubung.")
+        }
+    }
+
+    /** Barcode Code 128 hitam-putih murni — format ini menerima huruf+angka sehingga cocok untuk
+     * SKU bebas (beda dari EAN-13 yang wajib 12-13 digit angka saja). */
+    private fun generateBarcodeBitmap(data: String, widthPx: Int, heightPx: Int): Bitmap? {
+        if (data.isBlank()) return null
+        return try {
+            val matrix = MultiFormatWriter().encode(data, BarcodeFormat.CODE_128, widthPx, heightPx)
+            val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+            for (x in 0 until widthPx) {
+                for (y in 0 until heightPx) {
+                    bitmap.setPixel(x, y, if (matrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                }
+            }
+            bitmap
+        } catch (e: Exception) {
+            null
         }
     }
 

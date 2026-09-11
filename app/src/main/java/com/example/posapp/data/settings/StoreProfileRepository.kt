@@ -75,7 +75,24 @@ data class StoreProfile(
     /** Sudah menyelesaikan (atau melewati) Onboarding Wizard saat instal pertama kali —
      * dipakai MainActivity untuk menampilkan wizard itu HANYA sekali seumur instalasi.
      * Default false supaya instalasi baru (DataStore masih kosong) selalu melihatnya. */
-    val onboardingCompleted: Boolean = false
+    val onboardingCompleted: Boolean = false,
+    /** Aktifkan Promo/Diskon otomatis (v15) — nonaktif default (pola sama dengan loyaltyEnabled/
+     * tableTaggingEnabled/supplierPoEnabled) supaya toko yang tidak butuh tidak melihat elemen UI
+     * tambahan. Lihat PromoEngine & layar Kelola Promo. */
+    val promoEnabled: Boolean = false,
+    /** Berapa hari setelah transaksi BON/Piutang dianggap jatuh tempo (v15) — dipakai
+     * CheckoutUseCase untuk mengisi TransactionPaymentEntity.dueDate otomatis saat checkout,
+     * dan layar Piutang Jatuh Tempo untuk menyaring pelanggan yang perlu ditagih. */
+    val bonDueDays: Int = 30,
+    /** Aktifkan notifikasi sistem Android saat ada produk stok tipis (v15) — cek berkala lewat
+     * LowStockNotificationWorker. Nonaktif berarti hanya tampil sebagai kartu di Dashboard
+     * seperti sebelumnya (tidak ada notifikasi proaktif). */
+    val lowStockNotificationsEnabled: Boolean = true,
+    /** Tampilkan SKU/barcode di bawah nama tiap item pada struk cetak & PDF invoice (v15). */
+    val receiptShowSku: Boolean = false,
+    /** Catatan bebas yang dicetak di bawah alamat toko pada struk (v15) — mis. jam buka, media
+     * sosial, atau syarat retur. Kosong = tidak ditampilkan. */
+    val receiptHeaderNote: String = ""
 )
 
 /**
@@ -125,6 +142,11 @@ class StoreProfileRepository @Inject constructor(
         val TABLE_TAGGING_ENABLED = booleanPreferencesKey("table_tagging_enabled")
         val SUPPLIER_PO_ENABLED = booleanPreferencesKey("supplier_po_enabled")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val PROMO_ENABLED = booleanPreferencesKey("promo_enabled")
+        val BON_DUE_DAYS = androidx.datastore.preferences.core.intPreferencesKey("bon_due_days")
+        val LOW_STOCK_NOTIFICATIONS_ENABLED = booleanPreferencesKey("low_stock_notifications_enabled")
+        val RECEIPT_SHOW_SKU = booleanPreferencesKey("receipt_show_sku")
+        val RECEIPT_HEADER_NOTE = stringPreferencesKey("receipt_header_note")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -159,7 +181,12 @@ class StoreProfileRepository @Inject constructor(
             whatsappReceiptEnabled = prefs[Keys.WHATSAPP_RECEIPT_ENABLED] ?: true,
             tableTaggingEnabled = prefs[Keys.TABLE_TAGGING_ENABLED] ?: false,
             supplierPoEnabled = prefs[Keys.SUPPLIER_PO_ENABLED] ?: false,
-            onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false
+            onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
+            promoEnabled = prefs[Keys.PROMO_ENABLED] ?: false,
+            bonDueDays = prefs[Keys.BON_DUE_DAYS] ?: 30,
+            lowStockNotificationsEnabled = prefs[Keys.LOW_STOCK_NOTIFICATIONS_ENABLED] ?: true,
+            receiptShowSku = prefs[Keys.RECEIPT_SHOW_SKU] ?: false,
+            receiptHeaderNote = prefs[Keys.RECEIPT_HEADER_NOTE] ?: ""
         )
     }
 
@@ -329,5 +356,26 @@ class StoreProfileRepository @Inject constructor(
      * muncul lagi tiap kali app dibuka. */
     suspend fun skipOnboarding() {
         context.storeProfileDataStore.edit { prefs -> prefs[Keys.ONBOARDING_COMPLETED] = true }
+    }
+
+    suspend fun setPromoEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.PROMO_ENABLED] = enabled }
+    }
+
+    /** @param days Minimal 1 — 0/negatif tidak masuk akal sebagai jangka waktu jatuh tempo. */
+    suspend fun updateBonDueDays(days: Int) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.BON_DUE_DAYS] = days.coerceAtLeast(1) }
+    }
+
+    suspend fun setLowStockNotificationsEnabled(enabled: Boolean) {
+        context.storeProfileDataStore.edit { prefs -> prefs[Keys.LOW_STOCK_NOTIFICATIONS_ENABLED] = enabled }
+    }
+
+    /** Kustomisasi tampilan struk (v15): tampilkan SKU per item & catatan bebas di bawah alamat toko. */
+    suspend fun updateReceiptCustomization(showSku: Boolean, headerNote: String) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.RECEIPT_SHOW_SKU] = showSku
+            prefs[Keys.RECEIPT_HEADER_NOTE] = headerNote.trim()
+        }
     }
 }

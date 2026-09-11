@@ -8,8 +8,10 @@ import com.example.posapp.data.local.dao.CashMovementDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
+import com.example.posapp.data.local.dao.ParkedSaleDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
+import com.example.posapp.data.local.dao.PromoDao
 import com.example.posapp.data.local.dao.ShiftDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.TransactionDao
@@ -37,7 +39,8 @@ object DatabaseModule {
                 com.example.posapp.data.local.MIGRATION_10_11,
                 com.example.posapp.data.local.MIGRATION_11_12,
                 com.example.posapp.data.local.MIGRATION_12_13,
-                com.example.posapp.data.local.MIGRATION_13_14
+                com.example.posapp.data.local.MIGRATION_13_14,
+                com.example.posapp.data.local.MIGRATION_14_15
             )
             // Hanya untuk skenario downgrade (mis. pasang ulang APK versi lama secara tidak
             // sengaja) — kasus langka yang aman diberi fallback destruktif karena versi
@@ -81,4 +84,10 @@ object DatabaseModule {
 
     @Provides
     fun provideCashMovementDao(db: AppDatabase): CashMovementDao = db.cashMovementDao()
+
+    @Provides
+    fun providePromoDao(db: AppDatabase): PromoDao = db.promoDao()
+
+    @Provides
+    fun provideParkedSaleDao(db: AppDatabase): ParkedSaleDao = db.parkedSaleDao()
 }

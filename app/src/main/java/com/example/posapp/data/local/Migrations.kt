@@ -194,3 +194,58 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
         )
     }
 }
+
+/**
+ * v14 -> v15: Promo/Diskon otomatis, Tahan Transaksi (Park Sale), & due date BON/Piutang.
+ * 1. Tabel baru `promos` — aturan diskon otomatis (minimal belanja, per kategori, atau beli-X-
+ *    gratis-Y), diterapkan otomatis di kasir lewat PromoEngine, lihat PromoEntity.kt.
+ * 2. Tabel baru `parked_sales` — transaksi yang "ditahan" kasir (pelanggan belum selesai
+ *    memilih/bayar) supaya kasir bisa melayani pelanggan lain dulu, lihat ParkedSaleEntity.kt.
+ * 3. Kolom baru `transaction_payments.dueDate` (nullable) — hanya diisi untuk baris metode BON,
+ *    dipakai fitur Reminder Piutang Jatuh Tempo. Baris lama (sebelum fitur ini) tetap NULL dan
+ *    tidak pernah dianggap jatuh tempo — konsisten dengan cara migrasi lain di file ini yang
+ *    tidak mengubah makna data yang sudah ada.
+ */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS promos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                percent REAL NOT NULL DEFAULT 0.0,
+                minPurchase REAL NOT NULL DEFAULT 0.0,
+                categoryId INTEGER DEFAULT NULL,
+                productId INTEGER DEFAULT NULL,
+                buyQty INTEGER NOT NULL DEFAULT 1,
+                getFreeQty INTEGER NOT NULL DEFAULT 1,
+                startAt INTEGER DEFAULT NULL,
+                endAt INTEGER DEFAULT NULL,
+                isActive INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS parked_sales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                itemsData TEXT NOT NULL,
+                note TEXT DEFAULT NULL,
+                customerId INTEGER DEFAULT NULL,
+                customerName TEXT DEFAULT NULL,
+                tableTag TEXT DEFAULT NULL,
+                transactionDiscount REAL NOT NULL DEFAULT 0.0,
+                itemCount INTEGER NOT NULL DEFAULT 0,
+                estimatedTotal REAL NOT NULL DEFAULT 0.0,
+                createdByName TEXT NOT NULL,
+                createdAt INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL("ALTER TABLE transaction_payments ADD COLUMN dueDate INTEGER DEFAULT NULL")
+    }
+}

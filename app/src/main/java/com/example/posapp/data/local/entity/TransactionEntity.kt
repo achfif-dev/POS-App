@@ -100,7 +100,12 @@ data class TransactionPaymentEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val transactionId: Long,
     val method: PaymentMethod,
-    val amount: Double
+    val amount: Double,
+    /** Tanggal jatuh tempo piutang (v15) — HANYA diisi untuk baris method=BON, dihitung otomatis
+     * saat checkout dari StoreProfile.bonDueDays (lihat CheckoutUseCase). Null untuk metode lain
+     * & untuk baris BON lama dari sebelum fitur ini ada (tidak pernah dianggap jatuh tempo,
+     * lihat CustomerDao.observeOverdueDebtors). */
+    val dueDate: Long? = null
 )
 
 @Entity(

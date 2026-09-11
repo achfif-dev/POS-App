@@ -9,8 +9,10 @@ import com.example.posapp.data.local.dao.CashMovementDao
 import com.example.posapp.data.local.dao.CategoryDao
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.ExpenseDao
+import com.example.posapp.data.local.dao.ParkedSaleDao
 import com.example.posapp.data.local.dao.ProductDao
 import com.example.posapp.data.local.dao.ProductVariantDao
+import com.example.posapp.data.local.dao.PromoDao
 import com.example.posapp.data.local.dao.ShiftDao
 import com.example.posapp.data.local.dao.StockAdjustmentDao
 import com.example.posapp.data.local.dao.SupplierDao
@@ -24,9 +26,12 @@ import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.DebtPaymentEntity
 import com.example.posapp.data.local.entity.ExpenseEntity
 import com.example.posapp.data.local.entity.ExpensePeriod
+import com.example.posapp.data.local.entity.ParkedSaleEntity
 import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.ProductEntity
 import com.example.posapp.data.local.entity.ProductVariantEntity
+import com.example.posapp.data.local.entity.PromoEntity
+import com.example.posapp.data.local.entity.PromoType
 import com.example.posapp.data.local.entity.ShiftEntity
 import com.example.posapp.data.local.entity.ShiftStatus
 import com.example.posapp.data.local.entity.StockAdjustmentEntity
@@ -69,6 +74,12 @@ class Converters {
 
     @TypeConverter
     fun toCashMovementType(value: String): CashMovementType = CashMovementType.valueOf(value)
+
+    @TypeConverter
+    fun fromPromoType(value: PromoType): String = value.name
+
+    @TypeConverter
+    fun toPromoType(value: String): PromoType = PromoType.valueOf(value)
 }
 
 @Database(
@@ -89,9 +100,11 @@ class Converters {
         TransactionReturnItemEntity::class,
         AuditLogEntity::class,
         SupplierEntity::class,
-        CashMovementEntity::class
+        CashMovementEntity::class,
+        PromoEntity::class,
+        ParkedSaleEntity::class
     ],
-    version = 14, // v14: tabel cash_movements (kas masuk/keluar non-penjualan per shift)
+    version = 15, // v15: promos, parked_sales, transaction_payments.dueDate (lihat MIGRATION_14_15)
     // exportSchema = true: mulai v10, setiap build menyimpan snapshot skema JSON ke app/schemas/
     // (lihat room.schemaLocation di app/build.gradle.kts). WAJIB commit folder schemas/ ke Git.
     // Ini yang memungkinkan migrasi berikutnya (v10 -> v11, dst.) diuji otomatis dengan
@@ -114,6 +127,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun auditLogDao(): AuditLogDao
     abstract fun supplierDao(): SupplierDao
     abstract fun cashMovementDao(): CashMovementDao
+    abstract fun promoDao(): PromoDao
+    abstract fun parkedSaleDao(): ParkedSaleDao
 
     companion object {
         const val DATABASE_NAME = "pos_database"

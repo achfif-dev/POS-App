@@ -2,6 +2,7 @@ package com.example.posapp.data.repository
 
 import com.example.posapp.data.local.dao.CustomerDao
 import com.example.posapp.data.local.dao.CustomerWithDebt
+import com.example.posapp.data.local.dao.OverdueDebtor
 import com.example.posapp.data.local.entity.CustomerEntity
 import com.example.posapp.data.local.entity.DebtPaymentEntity
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,10 @@ class CustomerRepository @Inject constructor(
     fun observeAllWithDebt(): Flow<List<CustomerWithDebt>> = customerDao.observeAllWithDebt()
 
     fun observeDebtDetail(customerId: Long): Flow<CustomerWithDebt?> = customerDao.observeDebtDetail(customerId)
+
+    /** Pelanggan dengan piutang BON yang sudah lewat jatuh tempo (v15) — lihat CustomerDao.observeOverdueDebtors. */
+    fun observeOverdueDebtors(): Flow<List<OverdueDebtor>> =
+        customerDao.observeOverdueDebtors(System.currentTimeMillis())
 
     fun observePayments(customerId: Long): Flow<List<DebtPaymentEntity>> = customerDao.observePayments(customerId)
 

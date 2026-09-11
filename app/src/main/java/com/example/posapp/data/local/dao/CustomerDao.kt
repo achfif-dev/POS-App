@@ -18,6 +18,16 @@ data class CustomerWithDebt(
     val loyaltyPoints: Long
 )
 
+/** Satu pelanggan dengan piutang yang sudah melewati tanggal jatuh tempo (v15) — lihat
+ * [CustomerDao.observeOverdueDebtors]. */
+data class OverdueDebtor(
+    val customerId: Long,
+    val customerName: String,
+    val customerPhone: String?,
+    val earliestDueDate: Long,
+    val debtBalance: Double
+)
+
 @Dao
 interface CustomerDao {
 
@@ -59,6 +69,36 @@ interface CustomerDao {
 
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getById(id: Long): CustomerEntity?
+
+    /**
+     * Pelanggan dengan piutang BON yang sudah lewat tanggal jatuh tempo (v15, lihat
+     * TransactionPaymentEntity.dueDate & StoreProfile.bonDueDays) DAN saldo piutangnya masih
+     * > 0 (belum lunas — HAVING debtBalance > 0 menyaring pelanggan yang debtnya sudah dibayar
+     * lunas walau salah satu transaksi lamanya pernah telat). Transaksi VOIDED dikeluarkan dari
+     * hitungan (uangnya dianggap tidak pernah terjadi, sama seperti kalkulasi debt lain di app
+     * ini). Diurutkan dari yang paling lama menunggak.
+     */
+    @Query(
+        """
+        SELECT c.id as customerId, c.name as customerName, c.phone as customerPhone,
+            MIN(tp.dueDate) as earliestDueDate,
+            COALESCE((
+                SELECT SUM(tp2.amount) FROM transaction_payments tp2
+                JOIN transactions t2 ON t2.id = tp2.transactionId
+                WHERE tp2.method = 'BON' AND t2.customerId = c.id AND t2.status != 'VOIDED'
+            ), 0) - COALESCE((
+                SELECT SUM(dp.amount) FROM debt_payments dp WHERE dp.customerId = c.id
+            ), 0) as debtBalance
+        FROM customers c
+        JOIN transactions t ON t.customerId = c.id
+        JOIN transaction_payments tp ON tp.transactionId = t.id AND tp.method = 'BON'
+        WHERE c.isActive = 1 AND t.status != 'VOIDED' AND tp.dueDate IS NOT NULL AND tp.dueDate < :now
+        GROUP BY c.id
+        HAVING debtBalance > 0
+        ORDER BY earliestDueDate ASC
+        """
+    )
+    fun observeOverdueDebtors(now: Long): Flow<List<OverdueDebtor>>
 
     @Insert
     suspend fun insert(customer: CustomerEntity): Long

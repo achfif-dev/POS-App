@@ -67,19 +67,36 @@ class LicenseRepository @Inject constructor(
 
     private val functions: FirebaseFunctions by lazy { FirebaseFunctions.getInstance("asia-southeast2") }
 
-    /** ID stabil unik per instalasi (bukan IMEI/data pribadi) — dibuat sekali, dipakai server
-     * untuk mengikat satu licenseKey ke sejumlah device tertentu (lihat maxDevices di backend). */
+    /** ID stabil unik per instalasi (bukan IMEI/data pribadi) — dipakai server untuk mengikat
+     * satu licenseKey ke sejumlah device tertentu (lihat maxDevices di backend).
+     *
+     * TEMUAN KEAMANAN (audit ulang): sebelumnya nilai ini dibaca dari cache DataStore LEBIH
+     * DULU sebelum dihitung dari ANDROID_ID. Kalau seluruh folder data app (termasuk file
+     * DataStore lisensi ini) disalin ke device lain — mis. lewat `adb backup`/restore, root
+     * file manager, atau clone data app — device baru itu ikut membawa nilai device_id milik
+     * device asal dan lolos diverifikasi sebagai device yang sama persis (lihat [computeState]),
+     * padahal fisiknya berbeda: lisensi sekali-device jadi bisa "dipindah" tanpa aktivasi ulang.
+     * Sekarang dihitung ULANG dari Settings.Secure.ANDROID_ID setiap kali dipanggil — nilai ini
+     * terikat ke kombinasi OS + signing key APK sehingga TIDAK ikut tersalin sekadar dengan
+     * menyalin folder data app. Hasil hitungan tetap disimpan ke DataStore sebagai cache (dibaca
+     * balik oleh [computeState] lewat currentDeviceId, bukan lagi sumber kebenaran utama).
+     *
+     * Fallback UUID acak (device tanpa ANDROID_ID valid, jarang terjadi) TETAP dibaca dari cache
+     * kalau sudah pernah dibuat sebelumnya — untuk kasus itu memang tidak ada sumber identitas
+     * lain yang lebih baik, keterbatasan yang sudah diketahui dan bukan celah baru.
+     */
     suspend fun deviceId(): String {
-        val prefs = context.licenseDataStore.data.first()
-        prefs[KEY_DEVICE_ID]?.let { return it }
         val androidId = runCatching {
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
         }.getOrNull()
-        val generated = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
-            "and_$androidId"
-        } else {
-            "uuid_${UUID.randomUUID()}"
+        if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
+            val computed = "and_$androidId"
+            context.licenseDataStore.edit { it[KEY_DEVICE_ID] = computed }
+            return computed
         }
+        val prefs = context.licenseDataStore.data.first()
+        prefs[KEY_DEVICE_ID]?.takeIf { it.startsWith("uuid_") }?.let { return it }
+        val generated = "uuid_${UUID.randomUUID()}"
         context.licenseDataStore.edit { it[KEY_DEVICE_ID] = generated }
         return generated
     }
@@ -95,7 +112,14 @@ class LicenseRepository @Inject constructor(
         }
     }
 
-    val state: Flow<LicenseState> = context.licenseDataStore.data.map { prefs ->
+    // Dihitung ULANG dari ANDROID_ID (lihat komentar deviceId()), bukan dibaca dari cache prefs
+    // yang sama yang mungkin ikut tersalin kalau seluruh data app dipindahkan ke device lain.
+    private val currentDeviceIdFlow: Flow<String> = kotlinx.coroutines.flow.flow { emit(deviceId()) }
+
+    val state: Flow<LicenseState> = kotlinx.coroutines.flow.combine(
+        context.licenseDataStore.data,
+        currentDeviceIdFlow
+    ) { prefs, currentDeviceId ->
         computeState(
             licenseKey = prefs[KEY_LICENSE_KEY],
             customerName = prefs[KEY_CUSTOMER_NAME],
@@ -106,6 +130,7 @@ class LicenseRepository @Inject constructor(
             lastCheckedAt = prefs[KEY_LAST_CHECKED_AT],
             revoked = prefs[KEY_REVOKED] ?: false,
             firstLaunchAt = prefs[KEY_FIRST_LAUNCH_AT],
+            currentDeviceId = currentDeviceId,
             lastError = null,
         )
     }
@@ -132,6 +157,7 @@ class LicenseRepository @Inject constructor(
         lastCheckedAt: Long?,
         revoked: Boolean,
         firstLaunchAt: Long?,
+        currentDeviceId: String?,
         lastError: String?,
     ): LicenseState {
         if (licenseKey == null || payloadJson == null || signature == null) {
@@ -145,6 +171,21 @@ class LicenseRepository @Inject constructor(
             // TRIAL/TRIAL_EXPIRED sesuai firstLaunchAt), bukan status tersendiri, supaya toko
             // yang sah tapi kebetulan trial-nya masih jalan tidak ikut ter-lock oleh error ini.
             return trialState(firstLaunchAt, "Sertifikat lisensi tidak valid, aktivasi ulang diperlukan.")
+        }
+        // TEMUAN KEAMANAN (audit ulang): tanda tangan valid saja TIDAK CUKUP -- sertifikat yang
+        // sah tetap mengikat licenseKey+deviceId TERTENTU (lihat LicensePayload). Sebelumnya
+        // deviceId dari payload ini tidak pernah dicocokkan ke device yang sedang menjalankan
+        // app, jadi menyalin seluruh data app (termasuk sertifikat & cache device_id-nya) ke
+        // device lain membuat device itu ikut lolos sebagai ACTIVE selamanya tanpa pernah
+        // aktivasi ulang. currentDeviceId sekarang dihitung ULANG dari ANDROID_ID (lihat
+        // deviceId()), bukan dibaca dari cache yang sama yang ikut tersalin, sehingga device
+        // hasil salinan akan menghasilkan currentDeviceId yang beda dan ketahuan di sini.
+        val payload = LicenseCrypto.parsePayload(payloadJson)
+        if (currentDeviceId != null && payload.deviceId != currentDeviceId) {
+            return trialState(
+                firstLaunchAt,
+                "Sertifikat lisensi ini terdaftar untuk perangkat lain. Aktivasi ulang diperlukan di perangkat ini."
+            )
         }
         // TIDAK ADA pengecekan tanggal di sini — sertifikat yang lolos verifikasi tanda tangan
         // berlaku SELAMANYA (lisensi sekali bayar). Satu-satunya jalan keluar dari ACTIVE adalah
@@ -204,7 +245,7 @@ class LicenseRepository @Inject constructor(
                     licenseKey = trimmedKey, customerName = payload.customerName, plan = payload.plan,
                     payloadJson = payloadJson, signature = signature, activatedAt = payload.issuedAt,
                     lastCheckedAt = System.currentTimeMillis(), revoked = false, firstLaunchAt = null,
-                    lastError = null,
+                    currentDeviceId = devId, lastError = null,
                 )
             )
         } catch (e: FirebaseFunctionsException) {
@@ -247,6 +288,7 @@ class LicenseRepository @Inject constructor(
                     lastCheckedAt = updated[KEY_LAST_CHECKED_AT],
                     revoked = updated[KEY_REVOKED] ?: false,
                     firstLaunchAt = updated[KEY_FIRST_LAUNCH_AT],
+                    currentDeviceId = devId,
                     lastError = if (!isActive) "Lisensi ini sudah dinonaktifkan penjual." else null,
                 )
             )

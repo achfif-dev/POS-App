@@ -39,7 +39,10 @@ class PdfInvoiceGenerator @Inject constructor(
         storeAddress: String = "",
         receiptFooter: String = "Terima kasih!",
         logoImagePath: String? = null,
-        language: String = "id"
+        language: String = "id",
+        headerNote: String = "",
+        showSku: Boolean = false,
+        skuByProductId: Map<Long, String> = emptyMap()
     ): File {
         val strings = ReceiptStrings.forLanguage(language)
         val pageWidth = 220
@@ -53,9 +56,11 @@ class PdfInvoiceGenerator @Inject constructor(
         }
         val logoDrawHeight = if (logoBitmap != null) 54 else 0
         val addressLines = if (storeAddress.isNotBlank()) 1 else 0
-        val headerHeight = 90 + (addressLines * 12) + logoDrawHeight
+        val headerNoteLines = if (headerNote.isNotBlank()) 1 else 0
+        val skuLines = if (showSku) items.count { skuByProductId[it.productId]?.isNotBlank() == true } else 0
+        val headerHeight = 90 + (addressLines * 12) + (headerNoteLines * 12) + logoDrawHeight
         val footerHeight = 70
-        val pageHeight = headerHeight + (items.size * lineHeight) + footerHeight + 60
+        val pageHeight = headerHeight + (items.size * lineHeight) + (skuLines * 11) + footerHeight + 60
 
         val document = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
@@ -90,6 +95,10 @@ class PdfInvoiceGenerator @Inject constructor(
             canvas.drawText(storeAddress, pageWidth / 2f, y, centerSmallPaint)
             y += 12f
         }
+        if (headerNote.isNotBlank()) {
+            canvas.drawText(headerNote, pageWidth / 2f, y, centerSmallPaint)
+            y += 12f
+        }
         canvas.drawText("No: ${transaction.invoiceNumber}", 8f, y, normalPaint)
         y += 12f
         transaction.note?.takeIf { it.isNotBlank() }?.let {
@@ -104,6 +113,13 @@ class PdfInvoiceGenerator @Inject constructor(
         items.forEach { item ->
             canvas.drawText(item.productNameSnapshot, 8f, y, normalPaint)
             y += 11f
+            if (showSku) {
+                skuByProductId[item.productId]?.takeIf { it.isNotBlank() }?.let { sku ->
+                    canvas.drawText("SKU: $sku", 8f, y, centerSmallPaint.apply { textAlign = Paint.Align.LEFT })
+                    y += 11f
+                    centerSmallPaint.textAlign = Paint.Align.CENTER
+                }
+            }
             canvas.drawText("${item.quantity} ${item.unitSnapshot} x ${rupiah.format(item.priceSnapshot)}", 8f, y, normalPaint)
             canvas.drawText(rupiah.format(item.lineTotal), pageWidth - 8f, y, rightPaint)
             y += 13f
