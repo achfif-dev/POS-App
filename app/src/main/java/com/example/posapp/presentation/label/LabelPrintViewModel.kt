@@ -104,7 +104,7 @@ class LabelPrintViewModel @Inject constructor(
             var printedLabels = 0
             var failed = false
             outer@ for (item in items) {
-                repeat(item.copies) {
+                for (copyIndex in 0 until item.copies) {
                     val result = withContext(Dispatchers.IO) {
                         printerRepository.printLabel(profile.name, item.product, printerConfig)
                     }
