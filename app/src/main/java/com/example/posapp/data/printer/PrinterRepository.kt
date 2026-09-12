@@ -182,6 +182,7 @@ class PrinterRepository @Inject constructor(
         ) {
             return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
         }
+        var activeConnection: com.dantsu.escposprinter.connection.DeviceConnection? = null
         return try {
             val connection = resolveConnection(printerConfig) ?: return PrintResult.Error(
                 when (printerConfig.type) {
@@ -190,6 +191,7 @@ class PrinterRepository @Inject constructor(
                     PrinterConnectionType.USB -> "Tidak ada printer USB yang terdeteksi. Cek kabel OTG & izin akses USB."
                 }
             )
+            activeConnection = connection
 
             // 384 dots (48mm) ~ printer thermal 58mm umum. paperWidthMm 72f -> printer 80mm.
             val charsPerLine = if (printerConfig.paperWidthMm >= 70f) 48 else 32
@@ -246,6 +248,12 @@ class PrinterRepository @Inject constructor(
             PrintResult.Success
         } catch (e: Exception) {
             PrintResult.Error(e.message ?: "Gagal mencetak struk. Pastikan printer menyala dan terhubung.")
+        } finally {
+            // Cegah kebocoran resource/socket (Bluetooth/TCP/USB) -- tanpa ini, koneksi tetap
+            // terbuka setelah setiap cetak, dan mencetak berkali-kali dalam satu sesi app yang
+            // sama (kasir mencetak banyak struk seharian tanpa restart app) bisa menghabiskan
+            // file descriptor / gagal connect ulang ("socket already in use").
+            runCatching { activeConnection?.disconnect() }
         }
     }
 
@@ -272,6 +280,7 @@ class PrinterRepository @Inject constructor(
         ) {
             return PrintResult.Error("Izin Bluetooth belum diberikan. Aktifkan izin Bluetooth di pengaturan aplikasi.")
         }
+        var activeConnection: com.dantsu.escposprinter.connection.DeviceConnection? = null
         return try {
             val connection = resolveConnection(printerConfig) ?: return PrintResult.Error(
                 when (printerConfig.type) {
@@ -280,6 +289,7 @@ class PrinterRepository @Inject constructor(
                     PrinterConnectionType.USB -> "Tidak ada printer USB yang terdeteksi. Cek kabel OTG & izin akses USB."
                 }
             )
+            activeConnection = connection
             val charsPerLine = if (printerConfig.paperWidthMm >= 70f) 48 else 32
             val printer = EscPosPrinter(connection, 203, printerConfig.paperWidthMm, charsPerLine)
 
@@ -299,6 +309,8 @@ class PrinterRepository @Inject constructor(
             PrintResult.Success
         } catch (e: Exception) {
             PrintResult.Error(e.message ?: "Gagal mencetak label. Pastikan printer menyala dan terhubung.")
+        } finally {
+            runCatching { activeConnection?.disconnect() }
         }
     }
 
