@@ -134,10 +134,23 @@ $rels$stylesRel
             }
             else -> {
                 // inline string: tidak butuh sharedStrings.xml terpisah, lebih simpel & aman.
-                """<c r="$ref" s="$styleIndex" t="inlineStr"><is><t xml:space="preserve">${escape(value.toString())}</t></is></c>"""
+                """<c r="$ref" s="$styleIndex" t="inlineStr"><is><t xml:space="preserve">${escape(sanitizeForSpreadsheet(value.toString()))}</t></is></c>"""
             }
         }
     }
+
+    /** Cegah CSV/Formula Injection: kalau nilai sel (mis. nama produk/SKU dari input pengguna)
+     * DIAWALI karakter yang bisa dibaca Excel/Google Sheets sebagai AWAL FORMULA ('=', '+', '-',
+     * '@') atau karakter kontrol tab/carriage-return, beri prefiks tanda kutip tunggal supaya
+     * sel itu SELALU dibuka sebagai teks literal, bukan dieksekusi sebagai formula begitu file
+     * ini dibuka orang lain di Excel/Sheets. Tanpa ini, produk yang diberi nama semacam
+     * "=HYPERLINK(...)" atau "=cmd|'/c calc'!A1" bisa tereksekusi otomatis saat file dibuka. */
+    private fun sanitizeForSpreadsheet(text: String): String {
+        val first = text.firstOrNull() ?: return text
+        return if (first in FORMULA_TRIGGER_CHARS) "'$text" else text
+    }
+
+    private val FORMULA_TRIGGER_CHARS = charArrayOf('=', '+', '-', '@', '\t', '\r')
 
     private fun columnLetter(index: Int): String {
         var i = index
