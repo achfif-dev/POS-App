@@ -66,7 +66,8 @@ fun LoginScreen(
                         onDigit = viewModel::onDigit,
                         onBackspace = viewModel::onBackspace,
                         onSubmit = viewModel::submit,
-                        isLoading = uiState.isLoading
+                        isLoading = uiState.isLoading,
+                        lockoutSecondsRemaining = uiState.lockoutSecondsRemaining
                     )
                 }
             } else {
@@ -93,7 +94,8 @@ fun LoginScreen(
                         onDigit = viewModel::onDigit,
                         onBackspace = viewModel::onBackspace,
                         onSubmit = viewModel::submit,
-                        isLoading = uiState.isLoading
+                        isLoading = uiState.isLoading,
+                        lockoutSecondsRemaining = uiState.lockoutSecondsRemaining
                     )
                 }
             }
@@ -155,8 +157,13 @@ private fun NumericKeypad(
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onSubmit: () -> Unit,
-    isLoading: Boolean
+    isLoading: Boolean,
+    // > 0 selama device masih dalam masa lockout PIN (lihat LoginAttemptRepository) --
+    // tombol Konfirmasi dinonaktifkan & menampilkan hitung mundur, supaya jelas kenapa PIN
+    // yang sudah benar sekalipun sementara tidak bisa dipakai masuk.
+    lockoutSecondsRemaining: Long = 0L
 ) {
+    val isLocked = lockoutSecondsRemaining > 0
     // Grid manual (bukan LazyVerticalGrid) karena keypad ini dipakai di dalam Column yang
     // bisa discroll (verticalScroll) — menaruh layout lazy (yang juga scrollable) di dalam
     // Column scrollable akan crash ("infinity maximum height constraints").
@@ -183,9 +190,15 @@ private fun NumericKeypad(
         Button(
             onClick = onSubmit,
             modifier = Modifier.width(260.dp).height(50.dp),
-            enabled = !isLoading
+            enabled = !isLoading && !isLocked
         ) {
-            Text(if (isLoading) "Memproses..." else "Konfirmasi")
+            Text(
+                when {
+                    isLocked -> "Coba lagi dalam ${lockoutSecondsRemaining}d"
+                    isLoading -> "Memproses..."
+                    else -> "Konfirmasi"
+                }
+            )
         }
     }
 }
