@@ -152,6 +152,58 @@ exports.checkLicenseStatus = onCall({ region: REGION }, async (request) => {
 });
 
 // ============================================================================================
+// CLOUD SYNC — token tenant-scoped untuk fitur "Sinkronisasi Cloud" & "Cek Stok Semua Cabang".
+// ============================================================================================
+
+/**
+ * TEMUAN KEAMANAN (audit ulang — kebocoran data lintas-pelanggan/cross-tenant di Cloud Sync):
+ * sebelumnya CloudSyncRepository.kt/OutletCatalogSyncRepository.kt sign-in ANONIM biasa lewat
+ * `auth.signInAnonymously()` — semua pengguna app ini, dari toko/pelanggan mana pun yang membeli
+ * lisensi berbeda-beda, mendapat token Firebase Auth yang SETARA dan tidak membawa info
+ * kepemilikan grup pelanggan apa pun. Karena backend lisensi & fitur Cloud Sync sama-sama hidup
+ * di SATU proyek Firebase yang dipakai bersama semua pelanggan (lihat komentar di atas file ini),
+ * firestore.rules untuk outlet_summaries/outlet_catalog cuma bisa mensyaratkan
+ * `request.auth != null` untuk READ — bukan kepemilikan grup pelanggan — sehingga dua toko yang
+ * tidak saling terkait tapi sama-sama mengaktifkan toggle itu bisa saling membaca omzet harian,
+ * katalog produk, stok, dan harga jual satu sama lain.
+ *
+ * Fungsi ini memverifikasi dulu bahwa [deviceId] pemanggil BENAR terikat ke lisensi aktif
+ * [licenseKey] (pola sama seperti checkLicenseStatus di atas — TIDAK sekadar menerima licenseKey
+ * apa pun yang diketik pemanggil), lalu mem-mint custom token Firebase Auth dengan custom claim
+ * `customerGroupId` = SHA-256(licenseKey). Satu grup per licenseKey (bukan per outletId) —
+ * sengaja begitu supaya kalau satu toko punya beberapa cabang dengan licenseKey yang sama,
+ * cabang-cabang itu MEMANG dimaksudkan saling bisa lihat data cabang lain di grup mereka sendiri
+ * (tujuan awal fitur "Cek Stok Semua Cabang"), tapi TIDAK BISA melihat grup pelanggan lain.
+ *
+ * uid token dibuat DETERMINISTIK dari deviceId (`sync_<deviceId>`, bukan uid anonim acak) supaya
+ * `ownerUid` yang tersimpan di outlet_summaries/outlet_catalog tetap konsisten lintas sesi/
+ * reinstall app di device yang sama — lihat TenantAuthProvider.kt untuk alasan token ini
+ * sengaja dipakai di FirebaseApp KEDUA (terpisah dari sesi anonim default LicenseRepository/
+ * PaymentGatewayRepository), supaya tidak mengubah perilaku lisensi/payment gateway sama sekali.
+ */
+exports.mintSyncToken = onCall({ region: REGION }, async (request) => {
+  const { licenseKey, deviceId } = request.data || {};
+  if (!licenseKey || !deviceId) {
+    throw new HttpsError("invalid-argument", "licenseKey dan deviceId wajib diisi.");
+  }
+  const snap = await db.collection("licenses").doc(licenseKey).get();
+  if (!snap.exists) throw new HttpsError("not-found", "Kode lisensi tidak ditemukan.");
+  const data = snap.data();
+  const devices = data.devices || {};
+  if (!Object.prototype.hasOwnProperty.call(devices, deviceId)) {
+    throw new HttpsError("permission-denied", "Device ini belum pernah aktivasi untuk lisensi ini.");
+  }
+  if (data.isActive === false) {
+    throw new HttpsError("failed-precondition", "Lisensi ini sudah dinonaktifkan penjual.");
+  }
+
+  const customerGroupId = crypto.createHash("sha256").update(licenseKey).digest("hex");
+  const uid = `sync_${deviceId}`;
+  const customToken = await admin.auth().createCustomToken(uid, { customerGroupId });
+  return { customToken };
+});
+
+// ============================================================================================
 // PAYMENT GATEWAY (MIDTRANS) — kredensial MILIK TOKO SENDIRI, disimpan server-side saja.
 // ============================================================================================
 
