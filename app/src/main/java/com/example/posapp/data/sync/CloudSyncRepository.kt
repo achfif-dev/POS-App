@@ -1,16 +1,12 @@
 package com.example.posapp.data.sync
 
-import com.google.android.gms.tasks.Task
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.posapp.data.license.LicenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** Ringkasan omzet SATU cabang untuk SATU tanggal — satu-satunya data yang dikirim ke cloud
  * (bukan detail transaksi/produk/pelanggan), supaya tetap ringan & aman secara privasi. */
@@ -32,72 +28,43 @@ sealed class CloudSyncStatus {
     data class Error(val message: String) : CloudSyncStatus()
 }
 
-private suspend fun <T> Task<T>.awaitTask(): T = suspendCancellableCoroutine { cont ->
-    addOnCompleteListener { task ->
-        val exception = task.exception
-        if (task.isSuccessful) {
-            cont.resume(task.result)
-        } else {
-            cont.resumeWithException(exception ?: RuntimeException("Task Firebase gagal tanpa detail"))
-        }
-    }
-}
-
 /**
  * Mengirim & mengambil ringkasan omzet lintas cabang lewat Firestore. SELURUH fungsi di sini
- * fail-soft: kalau Firebase belum dikonfigurasi (tidak ada google-services.json) atau device
- * offline, status berubah jadi [CloudSyncStatus.NotConfigured]/[CloudSyncStatus.Error] — TIDAK
- * PERNAH melempar exception ke pemanggil, supaya fitur ini murni opsional dan tidak pernah
- * mengganggu alur kasir/checkout normal yang sepenuhnya offline-first.
+ * fail-soft: kalau Firebase belum dikonfigurasi (tidak ada google-services.json), device offline,
+ * atau lisensi belum aktivasi, status berubah jadi
+ * [CloudSyncStatus.NotConfigured]/[CloudSyncStatus.Error] — TIDAK PERNAH melempar exception ke
+ * pemanggil, supaya fitur ini murni opsional dan tidak pernah mengganggu alur kasir/checkout
+ * normal yang sepenuhnya offline-first.
+ *
+ * TEMUAN KEAMANAN (audit ulang — kebocoran data lintas-pelanggan): lihat dokumentasi lengkap di
+ * [TenantAuthProvider]. Setiap dokumen sekarang WAJIB membawa field `customerGroupId` (diisi dari
+ * [TenantSession], bukan dari input pengguna) dan setiap query WAJIB memfilter dengan field yang
+ * sama — tanpa filter query ini, Firestore menolak seluruh query karena rule read membaca
+ * `resource.data.customerGroupId` langsung (lihat firestore.rules untuk penjelasan "provably
+ * compliant query").
  */
 @Singleton
-class CloudSyncRepository @Inject constructor() {
+class CloudSyncRepository @Inject constructor(
+    private val tenantAuth: TenantAuthProvider,
+    private val licenseRepository: LicenseRepository,
+) {
 
     private val _status = MutableStateFlow<CloudSyncStatus>(CloudSyncStatus.Idle)
     val status: StateFlow<CloudSyncStatus> = _status.asStateFlow()
 
-    private fun firestoreOrNull(): FirebaseFirestore? = runCatching { FirebaseFirestore.getInstance() }.getOrNull()
-    private fun authOrNull(): FirebaseAuth? = runCatching { FirebaseAuth.getInstance() }.getOrNull()
-
-    /** Sign-in anonim (tanpa data pribadi) — cukup untuk Firestore Security Rules mensyaratkan
-     * `request.auth != null`, mencegah tulis/baca oleh siapa pun yang sekadar tahu config publik. */
-    private suspend fun ensureSignedIn(auth: FirebaseAuth): Boolean {
-        if (auth.currentUser != null) return true
-        return try {
-            auth.signInAnonymously().awaitTask()
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    /**
-     * TEMUAN KEAMANAN (audit ulang): sebelumnya dokumen `outlet_summaries/{outletId}_{dateKey}`
-     * ditulis TANPA identitas kepemilikan apa pun — rule hanya mengecek `request.auth != null`
-     * (semua pengguna app ini, sign-in anonim yang sifatnya identik satu sama lain). Artinya
-     * siapa pun yang tahu/menebak outletId cabang lain (dipakai sebagai bagian docId, jadi bisa
-     * ditebak kalau ID itu bocor lewat log/screenshot Pengaturan) bisa MENIMPA angka omzet
-     * cabang itu dengan angka palsu di layar "Ringkasan Semua Cabang" pemilik. Sekarang setiap
-     * docId dikunci ke `ownerUid` (identitas akun anonim Firebase device pengirim) — lihat
-     * firestore.rules untuk penegakan sisi server yang sesungguhnya (field ini di client hanya
-     * melengkapi rule, BUKAN pengganti rule, karena client selalu dianggap tidak tepercaya).
-     */
     suspend fun pushDailySummary(summary: OutletSalesSummary) {
-        val db = firestoreOrNull()
-        val auth = authOrNull()
-        if (db == null || auth == null) {
+        val db = tenantAuth.firestoreOrNull()
+        if (db == null) {
             _status.value = CloudSyncStatus.NotConfigured
             return
         }
         _status.value = CloudSyncStatus.Syncing
         try {
-            if (!ensureSignedIn(auth)) {
-                _status.value = CloudSyncStatus.Error("Gagal autentikasi cloud (cek koneksi internet)")
-                return
-            }
-            val uid = auth.currentUser?.uid
-            if (uid == null) {
-                _status.value = CloudSyncStatus.Error("Gagal autentikasi cloud (cek koneksi internet)")
+            val session = tenantAuth.ensureTenantSignedIn(licenseRepository)
+            if (session == null) {
+                _status.value = CloudSyncStatus.Error(
+                    "Gagal autentikasi cloud (cek koneksi internet & status aktivasi lisensi)"
+                )
                 return
             }
             val docId = "${summary.outletId}_${summary.dateKey}"
@@ -108,25 +75,32 @@ class CloudSyncRepository @Inject constructor() {
                 "totalRevenue" to summary.totalRevenue,
                 "totalTransactions" to summary.totalTransactions,
                 "updatedAt" to summary.updatedAt,
-                "ownerUid" to uid
+                "ownerUid" to session.uid,
+                "customerGroupId" to session.customerGroupId,
             )
-            db.collection("outlet_summaries").document(docId).set(data).awaitTask()
+            db.collection("outlet_summaries").document(docId).set(data).await()
             _status.value = CloudSyncStatus.Success(System.currentTimeMillis())
         } catch (e: Exception) {
             _status.value = CloudSyncStatus.Error(e.message ?: "Gagal sinkronisasi ke cloud")
         }
     }
 
-    /** Ambil ringkasan SEMUA cabang untuk satu tanggal tertentu — dipakai Ringkasan Semua Cabang. */
+    /** Ambil ringkasan SEMUA cabang (di grup pelanggan/lisensi yang sama) untuk satu tanggal
+     * tertentu — dipakai Ringkasan Semua Cabang.
+     *
+     * `.whereEqualTo("customerGroupId", ...)` di sini BUKAN sekadar optimisasi — ini WAJIB supaya
+     * query provably cocok dengan rule read di firestore.rules (lihat [TenantAuthProvider]);
+     * tanpa filter ini Firestore menolak seluruh query kalau ada dokumen grup pelanggan lain yang
+     * cocok dengan `dateKey` yang sama. */
     suspend fun fetchSummariesForDate(dateKey: String): List<OutletSalesSummary> {
-        val db = firestoreOrNull() ?: return emptyList()
-        val auth = authOrNull() ?: return emptyList()
-        if (!ensureSignedIn(auth)) return emptyList()
+        val db = tenantAuth.firestoreOrNull() ?: return emptyList()
+        val session = tenantAuth.ensureTenantSignedIn(licenseRepository) ?: return emptyList()
         return try {
             val snapshot = db.collection("outlet_summaries")
                 .whereEqualTo("dateKey", dateKey)
+                .whereEqualTo("customerGroupId", session.customerGroupId)
                 .get()
-                .awaitTask()
+                .await()
             snapshot.documents.mapNotNull { doc ->
                 val outletId = doc.getString("outletId") ?: return@mapNotNull null
                 OutletSalesSummary(
@@ -145,5 +119,5 @@ class CloudSyncRepository @Inject constructor() {
 
     /** true kalau Firebase terlihat terkonfigurasi (bukan jaminan kredensial valid, hanya bahwa
      * FirebaseApp berhasil di-inisialisasi dari google-services.json yang ada). */
-    fun isConfigured(): Boolean = firestoreOrNull() != null && authOrNull() != null
+    fun isConfigured(): Boolean = tenantAuth.isConfigured()
 }

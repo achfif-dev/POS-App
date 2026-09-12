@@ -1,7 +1,6 @@
 package com.example.posapp.data.sync
 
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.posapp.data.license.LicenseRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -23,62 +22,45 @@ data class OutletProductRow(
 /**
  * LINGKUP FITUR (baca dulu sebelum menambah): ini SATU ARAH (push-only) dan READ-ONLY di sisi
  * baca — setiap cabang mengirim snapshot katalognya sendiri ke Firestore, lalu admin bisa
- * MELIHAT (bukan mengedit) katalog+stok seluruh cabang dari satu HP untuk kebutuhan seperti
- * "cabang lain masih ada stok produk ini?" sebelum menyarankan pelanggan pindah cabang, atau
- * sebelum membuat mutasi stok manual antar cabang.
+ * MELIHAT (bukan mengedit) katalog+stok seluruh cabang (di grup pelanggan/lisensi yang sama) dari
+ * satu HP untuk kebutuhan seperti "cabang lain masih ada stok produk ini?" sebelum menyarankan
+ * pelanggan pindah cabang, atau sebelum membuat mutasi stok manual antar cabang.
  *
  * SENGAJA TIDAK melakukan merge dua arah ke Room lokal (menulis balik produk cabang lain ke
  * database sendiri) — itu berisiko konflik ID/SKU dan bisa merusak sumber kebenaran data toko
  * yang selama ini murni per-device. Kalau ke depan dibutuhkan katalog terpusat sungguhan (satu
  * sumber harga/stok dipakai bersama), itu perubahan arsitektur besar di atas fondasi ini
  * (idealnya pusat data pindah ke Firestore sepenuhnya, bukan Room lokal per device).
+ *
+ * TEMUAN KEAMANAN (audit ulang — kebocoran data lintas-pelanggan): lihat dokumentasi lengkap di
+ * [TenantAuthProvider]. Setiap dokumen `outlet_catalog/{outletId}` sekarang WAJIB membawa field
+ * `customerGroupId` (diisi dari [TenantSession], bukan input pengguna) dan [listKnownOutlets]
+ * WAJIB memfilter query dengan field yang sama, supaya toko dari lisensi lain tidak lagi ikut
+ * muncul di dropdown pemilihan cabang.
  */
 @Singleton
-class OutletCatalogSyncRepository @Inject constructor() {
+class OutletCatalogSyncRepository @Inject constructor(
+    private val tenantAuth: TenantAuthProvider,
+    private val licenseRepository: LicenseRepository,
+) {
 
-    private fun firestoreOrNull(): FirebaseFirestore? = runCatching { FirebaseFirestore.getInstance() }.getOrNull()
-    private fun authOrNull(): FirebaseAuth? = runCatching { FirebaseAuth.getInstance() }.getOrNull()
+    fun isConfigured(): Boolean = tenantAuth.isConfigured()
 
-    fun isConfigured(): Boolean = firestoreOrNull() != null && authOrNull() != null
-
-    private suspend fun ensureSignedIn(auth: FirebaseAuth): Boolean {
-        if (auth.currentUser != null) return true
-        return try {
-            auth.signInAnonymously().await(); true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    /**
-     * TEMUAN KEAMANAN (audit ulang): sebelumnya `pushCatalog` menulis ke
-     * `outlet_catalog/{outletId}` TANPA mengikat kepemilikan sama sekali — firestore.rules hanya
-     * mengecek `request.auth != null` (siapa pun yang sudah sign-in anonim, yaitu SEMUA
-     * pengguna app ini). Artinya siapa pun yang tahu/menebak outletId cabang lain (UUID acak,
-     * tapi tetap bisa saja bocor lewat log/screenshot) bisa MENIMPA katalog stok+harga cabang itu
-     * dengan data palsu — mencemari layar "Cek Stok Semua Cabang" pemilik dengan info yang
-     * salah. Sekarang setiap outletId dikunci ke `ownerUid` (identitas akun anonim Firebase
-     * device itu) pada tulisan PERTAMA, sama seperti pola yang sudah dipakai
-     * PaymentGatewayRepository — lihat firestore.rules untuk penegakan sisi server (client tetap
-     * WAJIB dianggap tidak tepercaya, field ownerUid di sini hanya melengkapi rule, bukan
-     * pengganti rule).
-     */
     suspend fun pushCatalog(outletId: String, outletName: String, rows: List<OutletProductRow>): Boolean {
-        val db = firestoreOrNull() ?: return false
-        val auth = authOrNull() ?: return false
-        if (!ensureSignedIn(auth)) return false
-        val uid = auth.currentUser?.uid ?: return false
+        val db = tenantAuth.firestoreOrNull() ?: return false
+        val session = tenantAuth.ensureTenantSignedIn(licenseRepository) ?: return false
         return try {
             // Klaim/perbarui dokumen induk LEBIH DULU (sebelum menulis produk) — rule Firestore
-            // untuk subkoleksi `products` mengecek ownerUid di dokumen induk ini lewat get(),
-            // jadi kalau urutannya dibalik, sinkronisasi PERTAMA KALI (dokumen induk belum ada)
-            // akan selalu ditolak rule karena get() belum menemukan ownerUid apa pun.
+            // untuk subkoleksi `products` mengecek ownerUid & customerGroupId di dokumen induk ini
+            // lewat get(), jadi kalau urutannya dibalik, sinkronisasi PERTAMA KALI (dokumen induk
+            // belum ada) akan selalu ditolak rule karena get() belum menemukan field apa pun.
             db.collection("outlet_catalog").document(outletId)
                 .set(
                     hashMapOf(
                         "outletName" to outletName,
                         "lastSyncedAt" to System.currentTimeMillis(),
-                        "ownerUid" to uid,
+                        "ownerUid" to session.uid,
+                        "customerGroupId" to session.customerGroupId,
                     ),
                     com.google.firebase.firestore.SetOptions.merge()
                 )
@@ -110,10 +92,15 @@ class OutletCatalogSyncRepository @Inject constructor() {
     }
 
     /** Dengarkan katalog SATU cabang lain secara realtime (dipakai layar "Cek Stok Semua Cabang"
-     * saat admin memilih salah satu cabang untuk dilihat detailnya). */
+     * saat admin memilih salah satu cabang untuk dilihat detailnya). Rule read subkoleksi
+     * `products` memverifikasi kepemilikan grup lewat get() ke dokumen induk outletId ini — tidak
+     * butuh filter query tambahan di sini karena outletId sudah jadi bagian tetap dari path,
+     * bukan field yang difilter dari hasil query. */
     fun observeOutletCatalog(outletId: String): Flow<List<OutletProductRow>> = callbackFlow {
-        val db = firestoreOrNull()
+        val db = tenantAuth.firestoreOrNull()
         if (db == null) { trySend(emptyList()); close(); return@callbackFlow }
+        val session = tenantAuth.ensureTenantSignedIn(licenseRepository)
+        if (session == null) { trySend(emptyList()); close(); return@callbackFlow }
         val registration = db.collection("outlet_catalog").document(outletId).collection("products")
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) { trySend(emptyList()); return@addSnapshotListener }
@@ -134,15 +121,22 @@ class OutletCatalogSyncRepository @Inject constructor() {
         awaitClose { registration.remove() }
     }
 
-    /** Daftar cabang yang pernah sinkron (untuk dropdown pemilihan cabang di UI). */
+    /** Daftar cabang yang pernah sinkron DI GRUP PELANGGAN/LISENSI YANG SAMA (untuk dropdown
+     * pemilihan cabang di UI). `.whereEqualTo("customerGroupId", ...)` WAJIB ada supaya query ini
+     * provably cocok dengan rule read (lihat [TenantAuthProvider]) — sebelumnya `.get()` polos di
+     * sini mengambil literasi SELURUH cabang dari SEMUA pelanggan tanpa filter kepemilikan sama
+     * sekali, yaitu temuan utama audit ulang. */
     suspend fun listKnownOutlets(): List<Pair<String, String>> {
-        val db = firestoreOrNull() ?: return emptyList()
-        val auth = authOrNull() ?: return emptyList()
-        if (!ensureSignedIn(auth)) return emptyList()
+        val db = tenantAuth.firestoreOrNull() ?: return emptyList()
+        val session = tenantAuth.ensureTenantSignedIn(licenseRepository) ?: return emptyList()
         return try {
-            db.collection("outlet_catalog").get().await().documents.map { doc ->
-                doc.id to (doc.getString("outletName") ?: doc.id)
-            }
+            db.collection("outlet_catalog")
+                .whereEqualTo("customerGroupId", session.customerGroupId)
+                .get()
+                .await()
+                .documents.map { doc ->
+                    doc.id to (doc.getString("outletName") ?: doc.id)
+                }
         } catch (e: Exception) {
             emptyList()
         }

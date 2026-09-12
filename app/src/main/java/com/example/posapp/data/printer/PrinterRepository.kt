@@ -75,6 +75,24 @@ class PrinterRepository @Inject constructor(
     private val rupiah = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
+    /** Cegah markup injection pada struk/label ESC/POS.
+     *
+     * TEMUAN KEAMANAN (audit ulang): [sb] di [printReceipt]/[printLabel] diparse oleh DSL
+     * formatting library DantSu ([C], [L], [R], <b>, <img>, dst.) SETELAH string dibangun. Kalau
+     * teks dari pengguna (nama produk, catatan meja/pesanan, footer struk, dst.) kebetulan
+     * mengandung karakter `[`, `]`, `<`, `>` yang cocok dengan salah satu tag itu, parser bisa
+     * salah menafsirkan sisa struk sebagai perintah format baru — merusak layout cetakan, atau
+     * untuk tag `<img>`, mencoba decode string sembarangan sebagai data gambar heksadesimal
+     * (berpotensi macet/lambat saat mencetak). Semua teks yang berasal dari input pengguna
+     * (bukan literal tetap yang kita tulis sendiri di kode) WAJIB lewat fungsi ini dulu sebelum
+     * disisipkan ke [sb] — konsisten dengan pola sanitasi yang sudah dipakai di
+     * XlsxWriter/ExcelExporter untuk masalah serupa (di sana untuk formula injection, di sini
+     * untuk markup injection).
+     */
+    private fun sanitizeForReceipt(text: String): String = text.replace(MARKUP_TRIGGER_CHARS, "")
+
+    private val MARKUP_TRIGGER_CHARS = Regex("[\\[\\]<>]")
+
     /** Nama printer Bluetooth yang sudah di-pair di sistem (untuk ditampilkan sebagai pilihan). */
     fun listPairedBluetoothPrinters(): List<String> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -191,23 +209,23 @@ class PrinterRepository @Inject constructor(
                 }
                 sb.append("[C]<img>${PrinterTextParserImg.bitmapToHexadecimalString(printer, scaledLogo)}</img>\n")
             }
-            sb.append("[C]<b>$storeName</b>\n")
-            if (storeAddress.isNotBlank()) sb.append("[C]$storeAddress\n")
-            if (headerNote.isNotBlank()) sb.append("[C]$headerNote\n")
+            sb.append("[C]<b>${sanitizeForReceipt(storeName)}</b>\n")
+            if (storeAddress.isNotBlank()) sb.append("[C]${sanitizeForReceipt(storeAddress)}\n")
+            if (headerNote.isNotBlank()) sb.append("[C]${sanitizeForReceipt(headerNote)}\n")
             sb.append("[C]--------------------------------\n")
             sb.append("[L]No: ${transaction.invoiceNumber}\n")
-            transaction.note?.takeIf { it.isNotBlank() }?.let { sb.append("[L]Meja/Pesanan: $it\n") }
+            transaction.note?.takeIf { it.isNotBlank() }?.let { sb.append("[L]Meja/Pesanan: ${sanitizeForReceipt(it)}\n") }
             sb.append("[L]${dateFormat.format(Date(transaction.createdAt))}\n")
             sb.append("[C]--------------------------------\n")
 
             items.forEach { item ->
-                sb.append("[L]${item.productNameSnapshot}\n")
+                sb.append("[L]${sanitizeForReceipt(item.productNameSnapshot)}\n")
                 if (showSku) {
                     skuByProductId[item.productId]?.takeIf { it.isNotBlank() }?.let { sku ->
-                        sb.append("[L]SKU: $sku\n")
+                        sb.append("[L]SKU: ${sanitizeForReceipt(sku)}\n")
                     }
                 }
-                sb.append("[L]${item.quantity} ${item.unitSnapshot} x ${rupiah.format(item.priceSnapshot)}[R]${rupiah.format(item.lineTotal)}\n")
+                sb.append("[L]${item.quantity} ${sanitizeForReceipt(item.unitSnapshot)} x ${rupiah.format(item.priceSnapshot)}[R]${rupiah.format(item.lineTotal)}\n")
             }
 
             sb.append("[C]--------------------------------\n")
@@ -221,7 +239,7 @@ class PrinterRepository @Inject constructor(
             sb.append("[L]${strings.paid} (${paymentLabel(transaction.paymentMethod, language)})[R]${rupiah.format(transaction.amountPaid)}\n")
             sb.append("[L]${strings.change}[R]${rupiah.format(transaction.changeAmount)}\n")
             sb.append("[C]--------------------------------\n")
-            sb.append("[C]$receiptFooter\n")
+            sb.append("[C]${sanitizeForReceipt(receiptFooter)}\n")
             sb.append("[L]\n")
 
             printer.printFormattedTextAndCut(sb.toString())
@@ -270,11 +288,11 @@ class PrinterRepository @Inject constructor(
                 ?: return PrintResult.Error("SKU/barcode produk ini tidak valid untuk dicetak sebagai barcode")
 
             val sb = StringBuilder()
-            sb.append("[C]$storeName\n")
-            sb.append("[C]<b>${product.name}</b>\n")
+            sb.append("[C]${sanitizeForReceipt(storeName)}\n")
+            sb.append("[C]<b>${sanitizeForReceipt(product.name)}</b>\n")
             sb.append("[C]${rupiah.format(product.sellPrice)}\n")
             sb.append("[C]<img>${PrinterTextParserImg.bitmapToHexadecimalString(printer, barcodeBitmap)}</img>\n")
-            sb.append("[C]${product.sku}\n")
+            sb.append("[C]${sanitizeForReceipt(product.sku)}\n")
             sb.append("[L]\n")
 
             printer.printFormattedTextAndCut(sb.toString())
