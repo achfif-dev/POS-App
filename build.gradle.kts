@@ -1,9 +1,18 @@
 plugins {
-    id("com.android.application") version "8.5.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-    id("com.google.dagger.hilt.android") version "2.51.1" apply false
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
+    // AGP 9.0 punya "built-in Kotlin support" -- plugin org.jetbrains.kotlin.android TERPISAH
+    // yang dulu dipakai project ini SUDAH TIDAK KOMPATIBEL dengan AGP 9 (lihat komentar di
+    // app/build.gradle.kts), jadi SENGAJA tidak didaftarkan lagi di sini. AGP 9.0 secara default
+    // otomatis memakai Kotlin Gradle Plugin 2.2.10 secara internal (tidak perlu dideklarasikan
+    // manual) -- kita ikut versi default ini (bukan versi Kotlin yang lebih baru) supaya
+    // migrasi tetap di jalur yang paling banyak diuji & didokumentasikan resmi oleh Google/JetBrains.
+    id("com.android.application") version "9.0.1" apply false
+    id("com.google.dagger.hilt.android") version "2.57.2" apply false
+    id("com.google.devtools.ksp") version "2.2.10-2.0.2" apply false
     id("com.google.gms.google-services") version "4.4.4" apply false
+    // Plugin compiler Compose (v2.x+) & kotlinx-serialization -- versinya HARUS PERSIS SAMA
+    // dengan versi Kotlin Gradle Plugin yang dipakai (2.2.10, default built-in AGP 9.0 di atas).
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10" apply false
 }
 
 tasks.register("clean", Delete::class) {
