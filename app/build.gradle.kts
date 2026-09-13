@@ -157,10 +157,15 @@ configurations.all {
 
 dependencies {
     // Core / Compose
+    // v: migrasi API 36 -- SEMPAT dicoba compose-bom:2026.08.00 ("selalu pakai versi terbaru"
+    // per rekomendasi Google), TAPI itu menyeret Compose 1.12.0 yang mensyaratkan compileSdk 37
+    // + AGP 9.2.0 (baca error "requires compileSdk 37" di CI) -- MELEBIHI target kita (36, sesuai
+    // syarat Play Store saat ini). 2026.06.00 = versi terakhir sebelum lompatan itu, masih cocok
+    // dengan compileSdk=36 & AGP 9.0.1.
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.activity:activity-compose:1.9.1")
-    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -173,9 +178,12 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // Room (offline persistent storage)
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    // v: migrasi API 36 -- dinaikkan dari 2.6.1 (2024) ke 2.8.4 karena 2.6.1 memicu bug KSP2
+    // yang sudah dikenal ("unexpected jvm signature V" saat memproses fungsi DAO suspend yang
+    // return Unit implisit) -- baru benar-benar diperbaiki mulai Room 2.7.0-alpha11.
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
 
     // Hilt DI
     implementation("com.google.dagger:hilt-android:2.57.2")
@@ -235,7 +243,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2") // termasuk org.junit.rules.TemporaryFolder dipakai BackupCryptoTest
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
