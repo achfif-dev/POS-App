@@ -63,6 +63,14 @@ class LicenseRepository @Inject constructor(
         private val KEY_LAST_CHECKED_AT = longPreferencesKey("last_checked_at")
         private val KEY_REVOKED = booleanPreferencesKey("revoked")
         private val KEY_FIRST_LAUNCH_AT = longPreferencesKey("first_launch_at")
+        // TEMUAN KEAMANAN (audit ulang): trial SEBELUMNYA murni membandingkan
+        // System.currentTimeMillis() sekarang vs firstLaunchAt + TRIAL_PERIOD_MILLIS -- kalau
+        // pengguna mundurkan jam/tanggal HP ke sebelum firstLaunchAt, trial jadi "belum mulai"
+        // lagi dan bisa dipakai gratis selamanya. KEY_MAX_OBSERVED_TIME mencatat waktu-sekarang
+        // TERBESAR yang pernah dilihat app ini (naik terus, tidak pernah turun walau jam diubah
+        // mundur) -- dipakai sebagai pengganti "sekarang" saat mengecek masa trial, lihat
+        // ensureFirstLaunchRecorded() & trialState().
+        private val KEY_MAX_OBSERVED_TIME = longPreferencesKey("max_observed_time")
     }
 
     private val functions: FirebaseFunctions by lazy { FirebaseFunctions.getInstance("asia-southeast2") }
@@ -103,12 +111,17 @@ class LicenseRepository @Inject constructor(
 
     /** Dipanggil sekali dari `PosApplication.onCreate` — mencatat kapan app ini PERTAMA KALI
      * dibuka di device ini, jadi jam pasir masa coba [TRIAL_PERIOD_MILLIS] mulai berjalan sejak
-     * device benar-benar mulai dipakai (bukan sejak APK di-build). Idempotent: hanya menulis
-     * kalau belum pernah tercatat sebelumnya. */
+     * device benar-benar mulai dipakai (bukan sejak APK di-build). Idempotent untuk firstLaunchAt
+     * (hanya menulis kalau belum pernah tercatat sebelumnya), TAPI KEY_MAX_OBSERVED_TIME di-bump
+     * setiap kali app dibuka (bukan cuma sekali) -- lihat komentar di deklarasi key-nya. */
     suspend fun ensureFirstLaunchRecorded() {
         val prefs = context.licenseDataStore.data.first()
-        if (prefs[KEY_FIRST_LAUNCH_AT] == null) {
-            context.licenseDataStore.edit { it[KEY_FIRST_LAUNCH_AT] = System.currentTimeMillis() }
+        context.licenseDataStore.edit { p ->
+            if (prefs[KEY_FIRST_LAUNCH_AT] == null) {
+                p[KEY_FIRST_LAUNCH_AT] = System.currentTimeMillis()
+            }
+            val previousMax = prefs[KEY_MAX_OBSERVED_TIME] ?: 0L
+            p[KEY_MAX_OBSERVED_TIME] = maxOf(previousMax, System.currentTimeMillis())
         }
     }
 
@@ -130,12 +143,13 @@ class LicenseRepository @Inject constructor(
             lastCheckedAt = prefs[KEY_LAST_CHECKED_AT],
             revoked = prefs[KEY_REVOKED] ?: false,
             firstLaunchAt = prefs[KEY_FIRST_LAUNCH_AT],
+            maxObservedTime = prefs[KEY_MAX_OBSERVED_TIME],
             currentDeviceId = currentDeviceId,
             lastError = null,
         )
     }
 
-    private fun trialState(firstLaunchAt: Long?, lastError: String?): LicenseState {
+    private fun trialState(firstLaunchAt: Long?, maxObservedTime: Long?, lastError: String?): LicenseState {
         // Belum pernah aktivasi (atau sertifikat tersimpan rusak/kosong sebagian) — bukan berarti
         // langsung terkunci: beri masa coba TRIAL_PERIOD_MILLIS dulu sejak pertama kali app ini
         // dibuka. `firstLaunchAt` seharusnya selalu sudah ada (diisi `ensureFirstLaunchRecorded`
@@ -143,7 +157,12 @@ class LicenseRepository @Inject constructor(
         // tipis ternyata belum, anggap trial baru saja mulai (fail-open ke arah menguntungkan
         // pengguna, bukan fail-closed) alih-alih menganggapnya sudah kedaluwarsa.
         val trialEndsAt = (firstLaunchAt ?: System.currentTimeMillis()) + TRIAL_PERIOD_MILLIS
-        val status = if (System.currentTimeMillis() <= trialEndsAt) LicenseStatus.TRIAL else LicenseStatus.TRIAL_EXPIRED
+        // effectiveNow TIDAK PERNAH lebih kecil dari waktu-sekarang terbesar yang pernah dilihat
+        // app ini (lihat KEY_MAX_OBSERVED_TIME) -- kalau jam device dimundurkan setelah trial
+        // sempat berjalan lewat batas waktunya, effectiveNow tetap mencerminkan itu, jadi trial
+        // tidak bisa "diputar ulang" cuma dengan mengubah tanggal HP.
+        val effectiveNow = maxOf(System.currentTimeMillis(), maxObservedTime ?: 0L)
+        val status = if (effectiveNow <= trialEndsAt) LicenseStatus.TRIAL else LicenseStatus.TRIAL_EXPIRED
         return LicenseState(status = status, trialEndsAt = trialEndsAt, lastError = lastError)
     }
 
@@ -157,11 +176,12 @@ class LicenseRepository @Inject constructor(
         lastCheckedAt: Long?,
         revoked: Boolean,
         firstLaunchAt: Long?,
+        maxObservedTime: Long?,
         currentDeviceId: String?,
         lastError: String?,
     ): LicenseState {
         if (licenseKey == null || payloadJson == null || signature == null) {
-            return trialState(firstLaunchAt, lastError)
+            return trialState(firstLaunchAt, maxObservedTime, lastError)
         }
         // Verifikasi ulang tanda tangan SETIAP kali dibaca (bukan cuma saat aktivasi) — mencegah
         // seseorang mengedit nilai di file DataStore secara manual (root/backup restore) untuk
@@ -170,7 +190,7 @@ class LicenseRepository @Inject constructor(
             // Sertifikat rusak/dipalsukan -> perlakukan seperti belum pernah aktivasi (jatuh ke
             // TRIAL/TRIAL_EXPIRED sesuai firstLaunchAt), bukan status tersendiri, supaya toko
             // yang sah tapi kebetulan trial-nya masih jalan tidak ikut ter-lock oleh error ini.
-            return trialState(firstLaunchAt, "Sertifikat lisensi tidak valid, aktivasi ulang diperlukan.")
+            return trialState(firstLaunchAt, maxObservedTime, "Sertifikat lisensi tidak valid, aktivasi ulang diperlukan.")
         }
         // TEMUAN KEAMANAN (audit ulang): tanda tangan valid saja TIDAK CUKUP -- sertifikat yang
         // sah tetap mengikat licenseKey+deviceId TERTENTU (lihat LicensePayload). Sebelumnya
@@ -184,6 +204,7 @@ class LicenseRepository @Inject constructor(
         if (currentDeviceId != null && payload.deviceId != currentDeviceId) {
             return trialState(
                 firstLaunchAt,
+                maxObservedTime,
                 "Sertifikat lisensi ini terdaftar untuk perangkat lain. Aktivasi ulang diperlukan di perangkat ini."
             )
         }
@@ -245,6 +266,7 @@ class LicenseRepository @Inject constructor(
                     licenseKey = trimmedKey, customerName = payload.customerName, plan = payload.plan,
                     payloadJson = payloadJson, signature = signature, activatedAt = payload.issuedAt,
                     lastCheckedAt = System.currentTimeMillis(), revoked = false, firstLaunchAt = null,
+                    maxObservedTime = null,
                     currentDeviceId = devId, lastError = null,
                 )
             )
@@ -288,6 +310,7 @@ class LicenseRepository @Inject constructor(
                     lastCheckedAt = updated[KEY_LAST_CHECKED_AT],
                     revoked = updated[KEY_REVOKED] ?: false,
                     firstLaunchAt = updated[KEY_FIRST_LAUNCH_AT],
+                    maxObservedTime = updated[KEY_MAX_OBSERVED_TIME],
                     currentDeviceId = devId,
                     lastError = if (!isActive) "Lisensi ini sudah dinonaktifkan penjual." else null,
                 )
