@@ -1,9 +1,15 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // org.jetbrains.kotlin.android DIHAPUS (v: migrasi API 36/Play Store) -- AGP 9.0 punya
+    // "built-in Kotlin support" bawaan & TIDAK KOMPATIBEL lagi dengan plugin kotlin-android
+    // terpisah yang dulu dipakai di sini (mendaftarkan keduanya sekaligus = build gagal).
+    // Kotlin compiler sekarang otomatis disediakan AGP sendiri (versi default 2.2.10, lihat
+    // root build.gradle.kts) -- TIDAK perlu plugin id terpisah untuk kompilasi Kotlin biasa lagi,
+    // hanya untuk compiler plugin TAMBAHAN (Compose, serialization) di bawah ini.
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
-    kotlin("plugin.serialization") version "1.9.24"
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 // Sinkronisasi Cloud (Fase 4 - lihat FIREBASE_SETUP.md) BUTUH proyek Firebase sendiri, yang
@@ -32,7 +38,9 @@ val hasReleaseSigningConfig: Boolean =
 
 android {
     namespace = "com.example.posapp"
-    compileSdk = 34
+    // v: migrasi target API 36 (Android 16) -- WAJIB untuk app baru di Play Store sejak
+    // 31 Agustus 2026 (lihat AGP 9.0.1 di root build.gradle.kts, yang mendukung sampai API 36.1).
+    compileSdk = 36
 
     defaultConfig {
         // CATATAN: applicationId sengaja dipisah dari `namespace` (yang masih com.example.posapp
@@ -42,7 +50,7 @@ android {
         // "id.gwg.posapp" di bawah sesuai domain/brand Anda sendiri sebelum rilis publik.
         applicationId = "id.shiftq.posapp"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 2
         versionName = "1.1.0"
 
@@ -82,15 +90,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    // kotlinOptions { jvmTarget = "17" } DIHAPUS (v: migrasi API 36) -- blok ini bagian dari
+    // plugin org.jetbrains.kotlin.android yang sudah tidak dipakai lagi (lihat komentar di
+    // plugins{} atas). compileOptions di atas sudah cukup menyamakan target bytecode Java &
+    // Kotlin untuk built-in Kotlin compilation-nya AGP 9 (pola persis sama seperti contoh
+    // migrasi resmi Google/Flutter untuk AGP 9 built-in Kotlin).
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
+    // composeOptions { kotlinCompilerExtensionVersion = ... } DIHAPUS (v: migrasi API 36) --
+    // sejak Kotlin 2.0, versi compiler Compose diatur oleh plugin
+    // org.jetbrains.kotlin.plugin.compose (lihat plugins{} di atas & root build.gradle.kts),
+    // BUKAN lagi lewat composeOptions manual di sini -- keduanya tidak boleh dipakai bersamaan.
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -149,7 +160,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.activity:activity-compose:1.9.1")
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -167,8 +178,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     // Hilt DI
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
+    implementation("com.google.dagger:hilt-android:2.57.2")
+    ksp("com.google.dagger:hilt-android-compiler:2.57.2")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // CameraX + ML Kit Barcode Scanning
@@ -224,7 +235,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2") // termasuk org.junit.rules.TemporaryFolder dipakai BackupCryptoTest
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
