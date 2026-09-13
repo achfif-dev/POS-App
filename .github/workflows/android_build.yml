@@ -29,6 +29,12 @@ jobs:
           cache: 'gradle'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+      # v: migrasi target API 36/AGP 9.0 -- pasang eksplisit platform & build-tools yang
+      # dibutuhkan compileSdk=36 (lihat app/build.gradle.kts). AGP BISA auto-download platform
+      # yang belum terpasang, tapi dipasang eksplisit di sini supaya tidak bergantung ke
+      # perilaku auto-download yang kadang gagal diam-diam di tengah proses build.
+      - name: Install Android SDK Platform 36 & Build-Tools 36.0.0
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
       # Repo ini belum menyertakan gradlew/gradle-wrapper.jar (binary) agar tetap ringan
       # saat diupload manual lewat GitHub web UI. setup-gradle otomatis men-download &
       # cache Gradle yang sesuai, sehingga 'gradle' bisa dipanggil langsung tanpa wrapper.
@@ -37,7 +43,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          # v: migrasi API 36 -- AGP 9.0.1 (lihat root build.gradle.kts) mensyaratkan minimal
+          # Gradle 9.1.0, naik dari 8.7 sebelumnya.
+          gradle-version: '9.1.0'
       - name: Run Lint
         run: gradle lintDebug --stacktrace
       - name: Run Unit Tests
@@ -129,7 +137,7 @@ jobs:
           fi
           echo "Keystore & password valid, lanjut build release."
 
-      - name: Build Release APK
+      - name: Build Release APK & App Bundle (AAB)
         if: ${{ env.HAS_RELEASE_SECRETS == 'true' }}
         env:
           RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
@@ -139,11 +147,15 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ env.TRIMMED_STORE_PASS }}
           RELEASE_KEY_ALIAS: ${{ env.TRIMMED_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ env.TRIMMED_KEY_PASS }}
-        run: gradle assembleRelease --stacktrace
+        # bundleRelease -> .aab, format WAJIB untuk upload rilis baru ke Play Console (APK
+        # murni tidak lagi diterima sejak Agustus 2021). assembleRelease (.apk) tetap dibangun
+        # juga -- dipakai job smoke-test di bawah (APK bisa langsung di-install via adb ke
+        # emulator, AAB tidak bisa tanpa bundletool) dan untuk testing manual/sideload cepat.
+        run: gradle assembleRelease bundleRelease --stacktrace
 
-      - name: Build Release APK (unsigned, secrets belum lengkap)
+      - name: Build Release APK & App Bundle (unsigned, secrets belum lengkap)
         if: ${{ env.HAS_RELEASE_SECRETS != 'true' }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle assembleRelease bundleRelease --stacktrace
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
@@ -157,6 +169,13 @@ jobs:
         with:
           name: app-release-apk
           path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Release AAB artifact (untuk upload ke Play Console)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
       - name: Upload Lint report
