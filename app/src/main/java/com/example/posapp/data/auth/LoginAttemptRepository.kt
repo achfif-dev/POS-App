@@ -1,6 +1,7 @@
 package com.example.posapp.data.auth
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -48,7 +49,13 @@ class LoginAttemptRepository @Inject constructor(
         private const val MAX_LOCKOUT_MILLIS = 5 * 60_000L
 
         private val KEY_FAILED_ATTEMPTS = intPreferencesKey("failed_attempts")
-        private val KEY_LOCKED_UNTIL = longPreferencesKey("locked_until")
+        // TEMUAN KEAMANAN (audit ulang): SEBELUMNYA disimpan sebagai wall-clock
+        // (System.currentTimeMillis()) -- siapa pun bisa memajukan tanggal/jam HP di
+        // Pengaturan untuk melewati lockout ini secara instan. SystemClock.elapsedRealtime()
+        // adalah jam sejak boot yang TIDAK terpengaruh perubahan tanggal/jam sistem, cuma reset
+        // ke 0 kalau device di-reboot (restart device jauh lebih tidak praktis sebagai cara
+        // membypass lockout berulang kali dibanding sekadar mengubah jam).
+        private val KEY_LOCKED_UNTIL_ELAPSED = longPreferencesKey("locked_until_elapsed_realtime")
     }
 
     data class LockState(val remainingSeconds: Long)
@@ -56,8 +63,8 @@ class LoginAttemptRepository @Inject constructor(
     /** null kalau sedang TIDAK dalam masa lockout (boleh mencoba PIN lagi sekarang). */
     suspend fun currentLockState(): LockState? {
         val prefs = context.loginAttemptDataStore.data.first()
-        val lockedUntil = prefs[KEY_LOCKED_UNTIL] ?: 0L
-        val remainingMillis = lockedUntil - System.currentTimeMillis()
+        val lockedUntil = prefs[KEY_LOCKED_UNTIL_ELAPSED] ?: 0L
+        val remainingMillis = lockedUntil - SystemClock.elapsedRealtime()
         if (remainingMillis <= 0) return null
         return LockState(remainingSeconds = (remainingMillis + 999) / 1000)
     }
@@ -73,8 +80,8 @@ class LoginAttemptRepository @Inject constructor(
             if (attempts > MAX_FREE_ATTEMPTS) {
                 val doublings = (attempts - MAX_FREE_ATTEMPTS - 1).coerceIn(0, 10)
                 val lockoutMillis = (BASE_LOCKOUT_MILLIS shl doublings).coerceAtMost(MAX_LOCKOUT_MILLIS)
-                val lockedUntil = System.currentTimeMillis() + lockoutMillis
-                prefs[KEY_LOCKED_UNTIL] = lockedUntil
+                val lockedUntil = SystemClock.elapsedRealtime() + lockoutMillis
+                prefs[KEY_LOCKED_UNTIL_ELAPSED] = lockedUntil
                 result = LockState(remainingSeconds = (lockoutMillis + 999) / 1000)
             }
         }
@@ -86,7 +93,7 @@ class LoginAttemptRepository @Inject constructor(
     suspend fun recordSuccess() {
         context.loginAttemptDataStore.edit { prefs ->
             prefs[KEY_FAILED_ATTEMPTS] = 0
-            prefs.remove(KEY_LOCKED_UNTIL)
+            prefs.remove(KEY_LOCKED_UNTIL_ELAPSED)
         }
     }
 }
