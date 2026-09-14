@@ -51,8 +51,12 @@ android {
         applicationId = "id.shiftq.posapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        // v: rilis pertama yang ditarget untuk Play Store (migrasi API 36 + kumpulan fitur besar
+        // sejak 1.1.0: Promo Otomatis, Tahan Transaksi, Reminder Piutang, Cetak Label, Rekonsiliasi
+        // Kas, keamanan cross-tenant Cloud Sync, dll) -- versionCode WAJIB naik dari build
+        // sebelumnya yang pernah diinstal (Play Store menolak versionCode yang sama/lebih kecil).
+        versionCode = 3
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
