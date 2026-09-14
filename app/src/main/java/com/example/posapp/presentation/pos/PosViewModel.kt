@@ -299,17 +299,70 @@ class PosViewModel @Inject constructor(
         _cart.value = current.copy(lines = newLines)
     }
 
+    /**
+     * TEMUAN KEAMANAN (audit ulang): sebelumnya menerima [discount] APA PUN tanpa batas atau
+     * cek role sama sekali — Kasir biasa bisa memberi diskon hingga 100% pada satu baris,
+     * membuat barang itu "gratis" secara sah di sistem. Sekarang nilai yang diminta dipangkas
+     * (clamp) lewat [DiscountPolicy] berdasarkan role kasir yang sedang login & batas
+     * [StoreProfile.maxKasirDiscountPercent] — ADMIN/MANAGER tidak dibatasi. Diskon yang
+     * BENAR-BENAR diterapkan (setelah clamp) baru dicatat ke audit log saat checkout berhasil,
+     * lihat CheckoutUseCase — bukan di sini, supaya tidak membanjiri log tiap kali kasir
+     * menggeser/mengetik ulang nilai sebelum yakin.
+     */
     fun updateLineDiscount(lineKey: String, discount: Double) {
         val current = _cart.value
+        val line = current.lines.firstOrNull { it.lineKey == lineKey } ?: return
+        val profile = uiState.value.storeProfile
+        val user = sessionManager.currentUser.value
+        val baseAmount = line.unitPrice * line.quantity
+        val result = com.example.posapp.domain.usecase.DiscountPolicy.clamp(
+            requestedDiscount = discount,
+            baseAmount = baseAmount,
+            user = user,
+            pinLoginEnabled = profile.pinLoginEnabled,
+            maxKasirDiscountPercent = profile.maxKasirDiscountPercent
+        )
         _cart.value = current.copy(
             lines = current.lines.map {
-                if (it.lineKey == lineKey) it.copy(discount = discount) else it
+                if (it.lineKey == lineKey) it.copy(discount = result.amount) else it
             }
         )
+        if (result.wasClamped) {
+            viewModelScope.launch {
+                _events.emit(
+                    PosEvent.ShowMessage(
+                        "Diskon dipangkas ke maksimal ${profile.maxKasirDiscountPercent}% (kebijakan Kasir). " +
+                            "Admin/Manager bisa login di device ini untuk memberi diskon lebih besar."
+                    )
+                )
+            }
+        }
     }
 
+    /** Lihat catatan lengkap di [updateLineDiscount] — kebijakan & alasan yang sama berlaku di
+     * sini, hanya basisnya subtotal keranjang (sebelum diskon), bukan satu baris. */
     fun updateTransactionDiscount(discount: Double) {
-        _cart.value = _cart.value.copy(transactionDiscount = discount)
+        val current = _cart.value
+        val profile = uiState.value.storeProfile
+        val user = sessionManager.currentUser.value
+        val result = com.example.posapp.domain.usecase.DiscountPolicy.clamp(
+            requestedDiscount = discount,
+            baseAmount = current.subtotal,
+            user = user,
+            pinLoginEnabled = profile.pinLoginEnabled,
+            maxKasirDiscountPercent = profile.maxKasirDiscountPercent
+        )
+        _cart.value = current.copy(transactionDiscount = result.amount)
+        if (result.wasClamped) {
+            viewModelScope.launch {
+                _events.emit(
+                    PosEvent.ShowMessage(
+                        "Diskon dipangkas ke maksimal ${profile.maxKasirDiscountPercent}% dari subtotal (kebijakan Kasir). " +
+                            "Admin/Manager bisa login di device ini untuk memberi diskon lebih besar."
+                    )
+                )
+            }
+        }
     }
 
     /**
@@ -355,11 +408,15 @@ class PosViewModel @Inject constructor(
         viewModelScope.launch {
             _isProcessing.value = true
             val cashierName = sessionManager.currentUser.value?.name
+            val actorRole = sessionManager.currentUser.value?.role
             // Pakai cart dari uiState (SUDAH termasuk potongan promo otomatis, lihat combine di
             // atas), bukan _cart.value mentah -- supaya nominal yang benar-benar ditagih SAMA
             // PERSIS dengan yang terakhir dilihat kasir di layar, termasuk promonya.
             val effectiveCart = uiState.value.cart
-            when (val result = checkoutUseCase(effectiveCart, payments, note = effectiveCart.tableTag, cashierName = cashierName, customerId = customerId)) {
+            when (val result = checkoutUseCase(
+                effectiveCart, payments, note = effectiveCart.tableTag, cashierName = cashierName,
+                customerId = customerId, actorRole = actorRole
+            )) {
                 is CheckoutResult.Success -> {
                     _lastReceipt.value = transactionRepository.getTransactionWithItems(result.transactionId)
                     _events.emit(PosEvent.CheckoutSuccess(result.transactionId, result.invoiceNumber, result.change))

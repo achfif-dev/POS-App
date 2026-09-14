@@ -135,6 +135,16 @@ class StoreProfileViewModel @Inject constructor(
         }
     }
 
+    /** Atur batas maksimum diskon manual (persen) yang boleh diberikan Kasir biasa tanpa
+     * Admin/Manager login sendiri — lihat DiscountPolicy.kt untuk penjelasan lengkap. */
+    fun setMaxKasirDiscountPercent(percent: Int) {
+        viewModelScope.launch {
+            val clamped = percent.coerceIn(0, 100)
+            storeProfileRepository.updateMaxKasirDiscountPercent(clamped)
+            _events.emit(StoreProfileEvent.ShowMessage("Batas diskon manual Kasir diatur ke $clamped%"))
+        }
+    }
+
     /** Tambah satu nominal cepat Cash baru (mis. 50000) ke daftar tombol cepat di layar Pembayaran. */
     fun addQuickCashAmount(amount: Long) {
         if (amount <= 0) return

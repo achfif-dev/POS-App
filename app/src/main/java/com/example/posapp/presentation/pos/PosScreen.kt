@@ -102,6 +102,8 @@ fun PosScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showParkDialog by remember { mutableStateOf(false) }
     var showParkedListDialog by remember { mutableStateOf(false) }
+    var showTransactionDiscountDialog by remember { mutableStateOf(false) }
+    var discountLineKeyTarget by remember { mutableStateOf<String?>(null) }
     var variantPickerProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     // Overlay centang animasi setelah checkout sukses (menggantikan Snackbar teks polos yang
@@ -318,8 +320,10 @@ fun PosScreen(
                                 price = line.unitPrice,
                                 quantity = line.quantity,
                                 unit = line.product.unit,
+                                discount = line.discount,
                                 onIncrease = { viewModel.updateQuantity(line.lineKey, line.quantity + 1) },
-                                onDecrease = { viewModel.updateQuantity(line.lineKey, line.quantity - 1) }
+                                onDecrease = { viewModel.updateQuantity(line.lineKey, line.quantity - 1) },
+                                onEditDiscount = { discountLineKeyTarget = line.lineKey }
                             )
                         }
                     }
@@ -334,6 +338,11 @@ fun PosScreen(
                     if (!uiState.cart.isEmpty) {
                         OutlinedButton(onClick = { showParkDialog = true }, modifier = Modifier.weight(1f)) {
                             Text("Tahan")
+                        }
+                        // Diskon transaksi (nominal Rupiah dari subtotal). Nilai yang diminta
+                        // otomatis dipangkas sesuai kebijakan role kasir — lihat DiscountPolicy.kt.
+                        OutlinedButton(onClick = { showTransactionDiscountDialog = true }, modifier = Modifier.weight(1f)) {
+                            Text(if (uiState.cart.transactionDiscount > 0) "Diskon: ${rupiah.format(uiState.cart.transactionDiscount)}" else "Diskon")
                         }
                     }
                     if (parkedSales.isNotEmpty()) {
@@ -383,6 +392,45 @@ fun PosScreen(
             },
             onDiscard = { id -> viewModel.discardParkedSale(id) }
         )
+    }
+
+    // Diskon transaksi (nominal Rupiah dari subtotal). Nilai yang dikirim lewat
+    // viewModel.updateTransactionDiscount otomatis dipangkas sesuai role kasir yang login —
+    // lihat DiscountPolicy.kt (TEMUAN KEAMANAN, audit ulang) — dialog ini sendiri TIDAK perlu
+    // tahu batasnya, cukup kirim nilai yang diminta lalu ViewModel akan memberi tahu lewat
+    // Snackbar kalau nilainya dipangkas.
+    if (showTransactionDiscountDialog) {
+        DiscountInputDialog(
+            title = "Diskon Transaksi",
+            currentAmount = uiState.cart.transactionDiscount,
+            onDismiss = { showTransactionDiscountDialog = false },
+            onConfirm = { amount ->
+                viewModel.updateTransactionDiscount(amount)
+                showTransactionDiscountDialog = false
+            }
+        )
+    }
+
+    // Diskon per-baris — sama seperti di atas, batasnya ditegakkan di ViewModel bukan di sini.
+    discountLineKeyTarget?.let { lineKey ->
+        val targetLine = uiState.cart.lines.firstOrNull { it.lineKey == lineKey }
+        if (targetLine != null) {
+            DiscountInputDialog(
+                title = "Diskon Item: ${targetLine.product.name}",
+                currentAmount = targetLine.discount,
+                onDismiss = { discountLineKeyTarget = null },
+                onConfirm = { amount ->
+                    viewModel.updateLineDiscount(lineKey, amount)
+                    discountLineKeyTarget = null
+                }
+            )
+        } else {
+            // Baris hilang dari keranjang (mis. qty diturunkan ke 0) selagi dialog terbuka --
+            // bersihkan lewat efek, BUKAN langsung set state di sini, supaya tidak menulis
+            // state selagi composition sedang membaca state yang sama (praktik Compose yang
+            // benar untuk pembersihan akibat perubahan data eksternal ke composable ini).
+            LaunchedEffect(lineKey) { discountLineKeyTarget = null }
+        }
     }
 
     variantPickerProduct?.let { product ->
@@ -717,8 +765,10 @@ private fun CartLineRow(
     price: Double,
     quantity: Int,
     unit: String = "pcs",
+    discount: Double = 0.0,
     onIncrease: () -> Unit,
-    onDecrease: () -> Unit
+    onDecrease: () -> Unit,
+    onEditDiscount: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -727,6 +777,15 @@ private fun CartLineRow(
         Column(Modifier.weight(1f)) {
             Text(name, maxLines = 1)
             Text(rupiah.format(price), style = MaterialTheme.typography.bodySmall)
+            // Tombol diskon per-baris. Nilai yang diminta di dialog akan DIPANGKAS otomatis
+            // oleh PosViewModel.updateLineDiscount sesuai role kasir yang login — lihat
+            // DiscountPolicy.kt (TEMUAN KEAMANAN, audit ulang).
+            Text(
+                if (discount > 0) "Diskon: -${rupiah.format(discount)} (ubah)" else "+ Diskon",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable { onEditDiscount() }
+            )
         }
         IconButton(onClick = onDecrease) { Icon(Icons.Default.Remove, contentDescription = "Kurangi") }
         Text("$quantity $unit")
@@ -767,6 +826,41 @@ private fun SummaryRow(label: String, value: String, emphasize: Boolean = false)
         Text(label, fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal)
         Text(value, fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal)
     }
+}
+
+/**
+ * Dialog input nominal diskon (Rupiah), dipakai untuk diskon per-baris maupun per-transaksi.
+ * Dialog ini SENGAJA tidak tahu/menampilkan batas maksimum kasir — itu tanggung jawab
+ * DiscountPolicy di PosViewModel (fail-closed, tidak bisa dilewati lewat UI mana pun); kalau
+ * nilai yang dikirim dipangkas, ViewModel akan memberi tahu lewat Snackbar setelahnya.
+ */
+@Composable
+private fun DiscountInputDialog(
+    title: String,
+    currentAmount: Double,
+    onDismiss: () -> Unit,
+    onConfirm: (amount: Double) -> Unit
+) {
+    var input by remember { mutableStateOf(if (currentAmount > 0) currentAmount.toLong().toString() else "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it.filter { c -> c.isDigit() } },
+                label = { Text("Nominal Diskon (Rp)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(input.toDoubleOrNull() ?: 0.0) }) { Text("Terapkan") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
 }
 
 /** Dialog catatan opsional saat menahan transaksi (v15) — lihat PosViewModel.parkCurrentSale. */

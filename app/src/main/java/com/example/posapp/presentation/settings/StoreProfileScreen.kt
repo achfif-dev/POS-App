@@ -95,6 +95,7 @@ fun StoreProfileScreen(
 
     var customHexInput by remember(profile.appColorHex) { mutableStateOf(profile.appColorHex ?: "") }
     var taxPercentInput by remember(profile.taxPercent) { mutableStateOf(formatTaxPercent(profile.taxPercent)) }
+    var maxDiscountInput by remember(profile.maxKasirDiscountPercent) { mutableStateOf(profile.maxKasirDiscountPercent.toString()) }
     var loyaltyRupiahPerPointInput by remember(profile.loyaltyRupiahPerPoint) { mutableStateOf(profile.loyaltyRupiahPerPoint.toString()) }
     var loyaltyPointValueInput by remember(profile.loyaltyPointValueRupiah) { mutableStateOf(profile.loyaltyPointValueRupiah.toString()) }
     var newQuickCashInput by remember { mutableStateOf("") }
@@ -204,6 +205,43 @@ fun StoreProfileScreen(
                                 enabled = taxPercentInput.toDoubleOrNull() != null
                             ) { Text("Simpan") }
                         }
+                    }
+                }
+            }
+
+            // TEMUAN KEAMANAN (audit ulang): sebelumnya diskon manual Kasir tidak dibatasi sama
+            // sekali (bisa sampai 100%, tanpa jejak audit) -- celah fraud "sweethearting" klasik
+            // di POS. Sekarang Admin bisa atur batasnya di sini; lihat DiscountPolicy.kt untuk
+            // penjelasan lengkap. Batas ini TIDAK berlaku untuk Admin/Manager sendiri.
+            Spacer(Modifier.height(28.dp))
+            Text("Batas Diskon Manual Kasir", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Batas maksimum diskon (per-item atau per-transaksi) yang boleh diberikan Kasir " +
+                    "biasa tanpa Admin/Manager login sendiri di device ini. Diskon di atas batas " +
+                    "ini otomatis dipangkas ke batas maksimum. Tidak berlaku untuk Admin & Manager.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = maxDiscountInput,
+                            onValueChange = { maxDiscountInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Batas Diskon Kasir (%)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Button(
+                            onClick = {
+                                viewModel.setMaxKasirDiscountPercent(maxDiscountInput.toIntOrNull() ?: 20)
+                            },
+                            enabled = maxDiscountInput.toIntOrNull() != null
+                        ) { Text("Simpan") }
                     }
                 }
             }

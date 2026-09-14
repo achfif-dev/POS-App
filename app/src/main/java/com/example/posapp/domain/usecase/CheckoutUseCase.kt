@@ -5,6 +5,8 @@ import com.example.posapp.data.local.entity.PaymentMethod
 import com.example.posapp.data.local.entity.TransactionEntity
 import com.example.posapp.data.local.entity.TransactionItemEntity
 import com.example.posapp.data.local.entity.TransactionPaymentEntity
+import com.example.posapp.data.local.entity.UserRole
+import com.example.posapp.data.repository.AuditLogRepository
 import com.example.posapp.data.repository.CustomerRepository
 import com.example.posapp.data.repository.TransactionRepository
 import com.example.posapp.data.settings.StoreProfileRepository
@@ -32,14 +34,20 @@ data class PaymentSplit(val method: PaymentMethod, val amount: Double)
 class CheckoutUseCase @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val customerRepository: CustomerRepository,
-    private val storeProfileRepository: StoreProfileRepository
+    private val storeProfileRepository: StoreProfileRepository,
+    private val auditLogRepository: AuditLogRepository
 ) {
     suspend operator fun invoke(
         cart: Cart,
         payments: List<PaymentSplit>,
         note: String? = null,
         cashierName: String? = null,
-        customerId: Long? = null
+        customerId: Long? = null,
+        /** Role aktor yang login saat checkout ini diproses — HANYA dipakai untuk audit log
+         * diskon manual (lihat [logManualDiscountIfAny]), tidak memengaruhi validasi checkout
+         * itu sendiri (batas diskon sudah ditegakkan lebih awal di PosViewModel lewat
+         * DiscountPolicy, sebelum cart ini sampai ke sini). */
+        actorRole: UserRole? = null
     ): CheckoutResult {
         when (val validation = CheckoutValidator.validate(cart, payments, customerId)) {
             is CheckoutValidator.ValidationResult.Invalid -> return CheckoutResult.Error(validation.message)
@@ -104,6 +112,7 @@ class CheckoutUseCase @Inject constructor(
             try {
                 val txId = transactionRepository.checkout(transaction, items, paymentEntities)
                 applyLoyaltyPoints(cart, customerId)
+                logManualDiscountIfAny(cart, invoiceNumber, cashierName, actorRole)
                 return CheckoutResult.Success(txId, invoiceNumber, change)
             } catch (e: SQLiteConstraintException) {
                 lastError = e // nomor invoice bentrok, ulangi dengan nomor baru
@@ -140,6 +149,35 @@ class CheckoutUseCase @Inject constructor(
         if (earned > 0) {
             customerRepository.adjustLoyaltyPoints(customerId, earned)
         }
+    }
+
+    /**
+     * TEMUAN KEAMANAN (audit ulang): sebelumnya diskon manual (per-baris & per-transaksi) sama
+     * sekali tidak tercatat di AuditLogRepository -- beda dari Void/Koreksi/Retur/Shift yang
+     * semuanya tercatat. Tanpa jejak ini, kasir yang berulang kali memberi diskon besar ke
+     * "kenalan"/diri sendiri (celah "sweethearting") tidak meninggalkan bukti apa pun untuk
+     * ditelusuri, hanya bisa ketahuan TIDAK LANGSUNG lewat selisih kas saat tutup shift.
+     * Dicatat SEKALI per transaksi yang selesai checkout (bukan tiap kali kasir mengetik ulang
+     * nilai di layar) supaya audit log tidak dibanjiri percobaan yang belum final. Batas nilai
+     * diskon itu sendiri sudah ditegakkan lebih awal oleh DiscountPolicy di PosViewModel --
+     * fungsi ini murni pencatatan, bukan validasi/penegakan kedua.
+     */
+    private suspend fun logManualDiscountIfAny(
+        cart: Cart,
+        invoiceNumber: String,
+        cashierName: String?,
+        actorRole: UserRole?
+    ) {
+        val manualDiscount = cart.transactionDiscount + cart.lines.sumOf { it.discount }
+        if (manualDiscount <= 0.0) return
+        val percentOfSubtotal = if (cart.subtotal > 0) (manualDiscount / cart.subtotal) * 100 else 0.0
+        auditLogRepository.log(
+            actorName = cashierName ?: "Kasir",
+            actorRole = actorRole,
+            action = "DISKON_MANUAL",
+            description = "Diskon manual Rp${manualDiscount.toInt()} " +
+                "(${"%.1f".format(percentOfSubtotal)}% dari subtotal) pada transaksi $invoiceNumber"
+        )
     }
 
     private companion object {
