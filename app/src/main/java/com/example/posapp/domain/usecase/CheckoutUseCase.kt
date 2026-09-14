@@ -170,7 +170,15 @@ class CheckoutUseCase @Inject constructor(
     ) {
         val manualDiscount = cart.transactionDiscount + cart.lines.sumOf { it.discount }
         if (manualDiscount <= 0.0) return
-        val percentOfSubtotal = if (cart.subtotal > 0) (manualDiscount / cart.subtotal) * 100 else 0.0
+        // BUG (ditemukan saat audit ulang): cart.subtotal SUDAH BERSIH dari diskon manual
+        // per-baris & promo per-baris (lihat properti Cart.subtotal) -- memakainya langsung
+        // sebagai pembagi membuat persentase yang tercatat LEBIH BESAR dari diskon yang
+        // sesungguhnya diberikan (mis. diskon 20% dari Rp100rb jadi tercatat sebagai 25%,
+        // karena dibagi Rp80rb bukan Rp100rb). grossSubtotal di bawah menghitung ulang subtotal
+        // SEBELUM diskon apa pun (manual maupun promo), supaya persentase di log sesuai makna
+        // "dari subtotal" yang sebenarnya dipahami pembaca log.
+        val grossSubtotal = cart.lines.sumOf { it.unitPrice * it.quantity }
+        val percentOfSubtotal = if (grossSubtotal > 0) (manualDiscount / grossSubtotal) * 100 else 0.0
         auditLogRepository.log(
             actorName = cashierName ?: "Kasir",
             actorRole = actorRole,
