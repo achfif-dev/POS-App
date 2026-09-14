@@ -4,6 +4,23 @@ Semua perubahan penting pada proyek ini dicatat di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versioning mengikuti [Semantic Versioning](https://semver.org/).
 
 ## [Unrilis]
+### Keamanan (audit ulang, 2026-09-14)
+- **Batas diskon manual Kasir + audit log**: sebelumnya diskon manual per-item/per-transaksi
+  bisa diberikan Kasir biasa TANPA batas (sampai 100%, membuat barang "gratis" secara sah di
+  sistem) dan TIDAK tercatat di Log Aktivitas sama sekali — beda dari Void/Koreksi/Retur/Shift
+  yang semuanya tercatat. Ini celah fraud klasik POS ("sweethearting": kasir beri diskon besar
+  ke kenalan/diri sendiri, tetap menagih penuh, lalu mengantongi selisih tunai) yang hanya bisa
+  ketahuan tidak langsung lewat selisih kas saat tutup shift. Diperbaiki dengan:
+  - `DiscountPolicy` (baru): Kasir dibatasi ke `StoreProfile.maxKasirDiscountPercent` (Admin
+    atur di Pengaturan > Profil Toko, default 20%) dari harga baris/subtotal — nilai yang
+    diminta melebihi batas otomatis dipangkas (clamp), bukan ditolak total. Admin & Manager
+    tidak dibatasi kebijakan ini sama sekali.
+  - Setiap transaksi dengan diskon manual (>0) sekarang tercatat ke Log Aktivitas (aksi
+    `DISKON_MANUAL`: nominal, persentase dari subtotal, nomor invoice, dan siapa kasirnya).
+  - Sekaligus melengkapi UI-nya: fitur diskon manual sebelumnya HANYA ada sebagai fungsi
+    ViewModel yang tidak pernah dipanggil dari layar mana pun (dead code) — sekarang ada tombol
+    "Diskon" di ringkasan keranjang & tombol diskon per-item di layar Kasir.
+
 ### Ditambahkan (Fase Bersaing Kompetitor)
 - **Sistem Lisensi Anti-Bajakan** (self-service): aktivasi lewat kode lisensi yang ditempel
   sendiri oleh pelanggan (tanpa bantuan developer), diverifikasi via tanda tangan RSA-2048 —
