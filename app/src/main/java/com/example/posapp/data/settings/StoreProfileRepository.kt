@@ -92,7 +92,15 @@ data class StoreProfile(
     val receiptShowSku: Boolean = false,
     /** Catatan bebas yang dicetak di bawah alamat toko pada struk (v15) — mis. jam buka, media
      * sosial, atau syarat retur. Kosong = tidak ditampilkan. */
-    val receiptHeaderNote: String = ""
+    val receiptHeaderNote: String = "",
+    /** TEMUAN KEAMANAN (audit ulang): batas maksimum diskon manual (persen dari harga
+     * baris/subtotal sebelum diskon) yang boleh diberikan Kasir biasa tanpa Admin/Manager login
+     * sendiri — lihat DiscountPolicy.kt untuk penjelasan lengkap kenapa batas ini perlu ada
+     * (celah "sweethearting": kasir bisa beri diskon besar lalu mengantongi selisih tunai).
+     * ADMIN & MANAGER tidak terpengaruh batas ini sama sekali. Default 20% — cukup longgar untuk
+     * diskon wajar sehari-hari (mis. bulatkan kembalian, kompensasi kecil), tapi tidak sampai
+     * bisa membuat barang "gratis". Admin bisa ubah di Pengaturan > Profil Toko. */
+    val maxKasirDiscountPercent: Int = 20
 )
 
 /**
@@ -147,6 +155,7 @@ class StoreProfileRepository @Inject constructor(
         val LOW_STOCK_NOTIFICATIONS_ENABLED = booleanPreferencesKey("low_stock_notifications_enabled")
         val RECEIPT_SHOW_SKU = booleanPreferencesKey("receipt_show_sku")
         val RECEIPT_HEADER_NOTE = stringPreferencesKey("receipt_header_note")
+        val MAX_KASIR_DISCOUNT_PERCENT = androidx.datastore.preferences.core.intPreferencesKey("max_kasir_discount_percent")
     }
 
     val profile: Flow<StoreProfile> = context.storeProfileDataStore.data.map { prefs ->
@@ -186,7 +195,8 @@ class StoreProfileRepository @Inject constructor(
             bonDueDays = prefs[Keys.BON_DUE_DAYS] ?: 30,
             lowStockNotificationsEnabled = prefs[Keys.LOW_STOCK_NOTIFICATIONS_ENABLED] ?: true,
             receiptShowSku = prefs[Keys.RECEIPT_SHOW_SKU] ?: false,
-            receiptHeaderNote = prefs[Keys.RECEIPT_HEADER_NOTE] ?: ""
+            receiptHeaderNote = prefs[Keys.RECEIPT_HEADER_NOTE] ?: "",
+            maxKasirDiscountPercent = prefs[Keys.MAX_KASIR_DISCOUNT_PERCENT] ?: 20
         )
     }
 
@@ -376,6 +386,15 @@ class StoreProfileRepository @Inject constructor(
         context.storeProfileDataStore.edit { prefs ->
             prefs[Keys.RECEIPT_SHOW_SKU] = showSku
             prefs[Keys.RECEIPT_HEADER_NOTE] = headerNote.trim()
+        }
+    }
+
+    /** @param percent Batas diskon manual Kasir (0-100), lihat DiscountPolicy.kt. Dipaksa ke
+     * rentang wajar (0-100) supaya nilai tidak masuk akal (mis. negatif atau >100%) tidak
+     * pernah bisa tersimpan sebagai konfigurasi. */
+    suspend fun updateMaxKasirDiscountPercent(percent: Int) {
+        context.storeProfileDataStore.edit { prefs ->
+            prefs[Keys.MAX_KASIR_DISCOUNT_PERCENT] = percent.coerceIn(0, 100)
         }
     }
 }
