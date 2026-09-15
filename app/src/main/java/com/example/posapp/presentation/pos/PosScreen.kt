@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
@@ -39,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -111,6 +114,15 @@ fun PosScreen(
     // gampang terlewat) — lihat CheckoutSuccessOverlay di presentation/theme/Micro.kt.
     var checkoutSuccess by remember { mutableStateOf<PosEvent.CheckoutSuccess?>(null) }
 
+    // Header dapat disembunyikan saat landscape (audit 2026-09-15) supaya area kerja kasir
+    // (grid produk & keranjang) dapat ruang vertikal lebih lega -- topbar Material biasanya
+    // memakan ~64dp yang cukup terasa di layar landscape yang tingginya terbatas. Default
+    // TETAP tampil (headerVisible = true); disembunyikan hanya lewat aksi eksplisit pengguna
+    // (tombol panah), dan hanya berlaku selama orientasi landscape -- begitu device diputar
+    // balik ke portrait, header otomatis full lagi (lihat kondisi isLandscape di topBar).
+    var headerVisible by remember { mutableStateOf(true) }
+    val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     val bluetoothPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) viewModel.printReceipt() }
@@ -169,6 +181,29 @@ fun PosScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            // Header collapsible khusus landscape (audit 2026-09-15). Saat headerVisible =
+            // false, topBar diganti strip tipis (28dp) berisi tombol panah-bawah untuk
+            // memunculkan header lagi -- jadi akses ke Produk/Dashboard/Stok/Logout dkk di
+            // dalam header TIDAK hilang permanen, cuma disembunyikan sementara. Saat portrait,
+            // kondisi ini selalu false (lihat isLandscape) sehingga header selalu full seperti
+            // biasa -- perilaku lama tidak berubah sama sekali di portrait.
+            if (isLandscape && !headerVisible) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(22.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { headerVisible = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.ExpandMore,
+                        contentDescription = "Tampilkan header",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
             PosBrandedTopBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -193,6 +228,12 @@ fun PosScreen(
                             Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Produk")
+                        }
+                    }
+                    // Tombol sembunyikan header, hanya muncul di landscape (audit 2026-09-15).
+                    if (isLandscape) {
+                        IconButton(onClick = { headerVisible = false }) {
+                            Icon(Icons.Default.ExpandLess, contentDescription = "Sembunyikan header")
                         }
                     }
                     IconButton(onClick = { showMenu = true }) {
@@ -232,6 +273,7 @@ fun PosScreen(
                     }
                 }
             )
+            }
         }
     ) { padding ->
         // Layout dinamis (audit 2026-09-15): sebelumnya rasio panel grid:keranjang (1.4f:1f)
