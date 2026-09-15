@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.posapp.domain.usecase.ProductImportSummary
 import com.example.posapp.presentation.theme.PosBrandedTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
