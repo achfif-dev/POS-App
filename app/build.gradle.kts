@@ -55,8 +55,8 @@ android {
         // sejak 1.1.0: Promo Otomatis, Tahan Transaksi, Reminder Piutang, Cetak Label, Rekonsiliasi
         // Kas, keamanan cross-tenant Cloud Sync, dll) -- versionCode WAJIB naik dari build
         // sebelumnya yang pernah diinstal (Play Store menolak versionCode yang sama/lebih kecil).
-        versionCode = 3
-        versionName = "2.0.0"
+        versionCode = 4
+        versionName = "2.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
