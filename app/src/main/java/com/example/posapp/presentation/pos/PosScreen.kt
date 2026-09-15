@@ -158,7 +158,15 @@ fun PosScreen(
         }
     }
 
+    // contentWindowInsets eksplisit (audit 2026-09-15): enableEdgeToEdge() di MainActivity
+    // menggambar konten di belakang system bar. Tanpa ini, Scaffold masih BISA salah
+    // menghitung insets pada sebagian device -- gejalanya: di landscape dengan navigasi
+    // 3-tombol, tombol navigasi pindah ke SISI layar dan menutupi konten (produk paling
+    // kanan / panel keranjang) karena tidak ada padding horizontal yang dicadangkan untuk
+    // area itu. WindowInsets.safeDrawing menjamin status bar, navigation bar (atas/bawah/
+    // sisi), dan cutout kamera selalu diberi ruang di semua orientasi & jenis navigasi.
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             PosBrandedTopBar(
@@ -226,9 +234,26 @@ fun PosScreen(
             )
         }
     ) { padding ->
-        Row(modifier = Modifier.padding(padding).fillMaxSize()) {
+        // Layout dinamis (audit 2026-09-15): sebelumnya rasio panel grid:keranjang (1.4f:1f)
+        // dan ukuran minimum kartu grid di-hardcode, jadi terlalu sempit di HP kecil portrait
+        // dan tidak memanfaatkan ruang ekstra di tablet/landscape lebar. BoxWithConstraints
+        // mengukur lebar area konten SESUNGGUHNYA (bukan cuma flag orientasi), lalu 3 kelas
+        // lebar berikut dipakai untuk menyesuaikan rasio panel & kepadatan grid -- mengikuti
+        // breakpoint compact/medium/expanded standar Material (600dp, 840dp):
+        //  - compact (<600dp, HP portrait sempit)  : panel keranjang diberi porsi lebih besar
+        //    relatif (grid:cart lebih kecil) & kartu grid lebih kecil supaya tetap 2+ kolom.
+        //  - medium (600-840dp, HP landscape/tablet kecil) : rasio & ukuran kartu sedang.
+        //  - expanded (>=840dp, tablet besar/landscape lebar) : grid diberi porsi lebih besar
+        //    & kartu lebih lega karena ruang berlimpah.
+        BoxWithConstraints(modifier = Modifier.padding(padding).fillMaxSize()) {
+            val isCompact = maxWidth < 600.dp
+            val isExpanded = maxWidth >= 840.dp
+            val gridWeight = if (isCompact) 1.1f else if (isExpanded) 1.8f else 1.4f
+            val gridMinSize = if (isCompact) 95.dp else if (isExpanded) 140.dp else 110.dp
+
+        Row(modifier = Modifier.fillMaxSize()) {
             // --- Panel Kiri: Grid Produk ---
-            Column(modifier = Modifier.weight(1.4f).fillMaxHeight().padding(8.dp)) {
+            Column(modifier = Modifier.weight(gridWeight).fillMaxHeight().padding(8.dp)) {
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChange,
@@ -263,12 +288,11 @@ fun PosScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
-                    // Diperkecil dari 180dp -> 110dp (audit 2026-09-15): panel grid berbagi
-                    // lebar dengan panel keranjang (weight 1.4f banding 1f) sehingga di layar
-                    // portrait sempit 180dp cuma cukup untuk 1 kolom. 110dp membuat 2+ kolom
-                    // muat baik di portrait maupun landscape, kartu produk juga diperkecil
-                    // (lihat ProductCard) supaya tetap proporsional.
-                    columns = GridCells.Adaptive(minSize = 110.dp),
+                    // Diperkecil dari 180dp -> dinamis (95/110/140dp mengikuti lebar layar,
+                    // lihat gridMinSize di atas): panel grid berbagi lebar dengan panel
+                    // keranjang, jadi kepadatan kolom perlu menyesuaikan lebar layar aktual
+                    // supaya tetap 2+ kolom baik di HP sempit maupun tablet lebar.
+                    columns = GridCells.Adaptive(minSize = gridMinSize),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -395,6 +419,7 @@ fun PosScreen(
                 }
             }
         }
+        } // tutup BoxWithConstraints (rasio panel & ukuran grid dinamis, lihat komentar di atas)
     }
 
     if (showParkDialog) {
