@@ -310,17 +310,32 @@ exports.createQrisCharge = onCall({ region: REGION }, async (request) => {
 
   // Catat status awal supaya PaymentGatewayRepository.observeChargeStatus langsung punya
   // dokumen untuk didengarkan (dari PENDING), diperbarui lagi oleh webhook di bawah.
+  // ownerUid = uid device yang membuat charge ini (SAMA dengan cred.ownerUid, sudah dicek cocok
+  // di atas) -- dipakai firestore.rules supaya HANYA device toko ini sendiri yang bisa membaca
+  // dokumen ini kembali, menutup celah tebak-order_id lintas toko (lihat TEMUAN KEAMANAN di
+  // firestore.rules).
   await db.collection("payment_status").doc(orderId).set({
     outletId,
     amount,
     status: "PENDING",
     createdAt: Date.now(),
+    ownerUid: request.auth.uid,
   });
 
   return {
     qrisImageUrl: qrAction ? qrAction.url : null,
     qrString: json.qr_string || null,
-    expiresAtMillis: Date.now() + 5 * 60 * 1000,
+    // TEMUAN (audit ulang, khusus QRIS dinamis): SEBELUMNYA nilai di sini 5 menit, TAPI custom
+    // expiry TIDAK PERNAH benar-benar dikirim ke Midtrans (tidak ada field `custom_expiry` di
+    // body /v2/charge di atas) -- jadi 5 menit itu HANYA angka yang ditampilkan ke app, sama
+    // sekali tidak mencerminkan kapan QR itu SUNGGUH kedaluwarsa di sisi Midtrans. Default resmi
+    // Midtrans untuk GoPay/QRIS adalah 15 MENIT (docs.midtrans.com/docs/gopay-qris-pos-integration)
+    // -- disamakan di sini supaya timer yang dilihat kasir/pelanggan cocok dengan kenyataan.
+    // SENGAJA TIDAK mengirim custom_expiry sendiri ke Midtrans (meski API mendukungnya) karena
+    // dokumentasi resmi mereka eksplisit memperingatkan: expiry di bawah 15 menit TIDAK
+    // dijamin diproses tepat waktu oleh scheduler internal Midtrans ("not recommended to set
+    // expiry below 15 minutes") -- jadi 15 menit default mereka justru pilihan paling aman.
+    expiresAtMillis: Date.now() + 15 * 60 * 1000,
   };
 });
 
@@ -361,8 +376,27 @@ exports.midtransNotification = onRequest({ region: REGION }, async (req, res) =>
         ? "CANCELLED"
         : "PENDING";
 
+    // TEMUAN (audit ulang, khusus QRIS dinamis): signature_key di atas membuktikan notifikasi ini
+    // ASLI dari Midtrans (tidak bisa dipalsukan tanpa serverKey), TAPI belum ada yang mencocokkan
+    // gross_amount di notifikasi dengan `amount` yang dicatat sendiri saat charge dibuat
+    // (createQrisCharge). Kalau angkanya berbeda -- untuk sebab apa pun, termasuk kemungkinan
+    // integrasi/adjustment di sisi Midtrans di masa depan -- app TIDAK BOLEH diam-diam
+    // menganggap transaksi lunas penuh hanya karena status="settlement". Ini murni pertahanan
+    // berlapis (defense-in-depth) sesuai rekomendasi resmi Midtrans, BUKAN memperbaiki celah yang
+    // sudah terbukti bisa dieksploitasi lewat alur normal (pelanggan tidak bisa mengubah nominal
+    // QRIS dinamis merchant-presented secara sepihak).
+    const expectedAmount = statusSnap.data().amount;
+    const paidAmount = Number(gross_amount);
+    const amountMatches = expectedAmount == null || Math.round(expectedAmount) === Math.round(paidAmount);
+    const finalStatus = mapped === "SETTLED" && !amountMatches ? "AMOUNT_MISMATCH" : mapped;
+    if (mapped === "SETTLED" && !amountMatches) {
+      console.error(
+        `midtransNotification: gross_amount notifikasi (${paidAmount}) tidak cocok dengan amount tersimpan (${expectedAmount}) untuk order ${order_id}`
+      );
+    }
+
     await db.collection("payment_status").doc(order_id).set(
-      { status: mapped, updatedAt: Date.now(), rawStatus: transaction_status },
+      { status: finalStatus, updatedAt: Date.now(), rawStatus: transaction_status, paidAmount },
       { merge: true }
     );
     res.status(200).send("ok");

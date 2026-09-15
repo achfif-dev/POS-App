@@ -87,14 +87,21 @@ service cloud.firestore {
     // menulis status pembayaran WAJIB lewat Cloud Function createQrisCharge (status awal) dan
     // midtransNotification (webhook, pakai Admin SDK yang otomatis melewati rules ini) — kalau
     // client bisa menulis, siapa pun bisa memalsukan status "SETTLED" tanpa benar-benar membayar.
-    // TEMUAN KEAMANAN (audit ulang): sebelumnya "allow read: if true" -- bisa dibaca (termasuk
-    // di-list seluruh koleksinya) oleh siapa pun tanpa sign-in sama sekali, beda dari koleksi
-    // lain di file ini yang minimal mensyaratkan request.auth != null. Order ID + status lunas/
-    // belum lintas SEMUA toko jadi bisa dibaca publik. App ini sudah sign-in anonim sebelum
-    // memanggil createQrisCharge (lihat CloudSyncRepository/PaymentGatewayRepository), jadi
-    // mensyaratkan auth di sini tidak mengubah perilaku normal app, hanya menutup akses publik.
+    // TEMUAN KEAMANAN (audit ulang, khusus QRIS terkait sinkronisasi/multi-cabang): fitur
+    // Payment Gateway/QRIS Otomatis TERNYATA TIDAK IKUT masuk ke perbaikan lintas-toko yang
+    // sudah diterapkan ke outlet_summaries/outlet_catalog (customerGroupId dari mintSyncToken) --
+    // PaymentGatewayRepository sign-in pakai anonim POLOS (signInAnonymously), bukan lewat
+    // TenantAuthProvider, jadi tidak punya claim customerGroupId sama sekali untuk dipakai di
+    // sini. Sebelumnya rule ini cuma "request.auth != null" (siapa pun yg login anonim dari toko
+    // MANAPUN boleh baca), padahal orderId = "TEMP-<timestamp milidetik>" (lihat PosScreen.kt)
+    // JAUH DARI ACAK -- gampang ditebak/diiterasi dalam rentang waktu jam operasional, artinya
+    // status+nominal transaksi QRIS toko lain bisa dibaca lewat tebak-tebakan order_id. Sekarang
+    // dicocokkan ke ownerUid yang SAMA seperti dipakai gateway_credentials (lihat
+    // createQrisCharge di functions/index.js yang sekarang ikut menulis ownerUid ke dokumen ini)
+    // -- pola ownerUid ini yang memang tersedia di jalur auth anonim-polos ini, konsisten dengan
+    // cara gateway_credentials sudah dilindungi.
     match /payment_status/{orderId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && resource.data.ownerUid == request.auth.uid;
       allow write: if false;
     }
 
