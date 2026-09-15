@@ -828,28 +828,32 @@ private fun CartLineRow(
     // sehingga nama produk & harga terpotong lalu turun baris. Solusi: nama & harga dibuat
     // satu baris dengan ellipsis (tidak pernah wrap), dan tombol +/- diperkecil jadi tombol
     // bundar 28dp custom (bukan IconButton 48dp) agar stepper qty tidak memakan banyak lebar.
+    // Disederhanakan (audit 2026-09-15): versi sebelumnya menaruh Row berbobot (weight)
+    // DI DALAM Column yang juga berbobot untuk menyatukan nama+harga sebaris -- pola nested
+    // weight ini yang diduga membuat Compose salah menghitung sisa ruang untuk stepper qty
+    // di panel sempit (ikon +/- & teks qty jadi nyaris tak kelihatan). Sekarang nama & harga
+    // dipisah jadi 2 baris sederhana (tanpa Row bersarang berbobot), stepper qty tetap
+    // kompak (QtyStepButton 28dp) tapi tint & warna teks dibuat eksplisit supaya kontras
+    // terjamin, tidak bergantung pada LocalContentColor ambient yang bisa redup.
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    rupiah.format(price),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                rupiah.format(price),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             // Tombol diskon per-baris. Nilai yang diminta di dialog akan DIPANGKAS otomatis
             // oleh PosViewModel.updateLineDiscount sesuai role kasir yang login — lihat
             // DiscountPolicy.kt (TEMUAN KEAMANAN, audit ulang).
@@ -867,6 +871,8 @@ private fun CartLineRow(
         Text(
             "$quantity $unit",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -876,9 +882,10 @@ private fun CartLineRow(
     }
 }
 
-/** Tombol stepper qty bundar 28dp (dipakai di [CartLineRow]) — kompak dibanding IconButton
+/** Tombol stepper qty bundar 30dp (dipakai di [CartLineRow]) — kompak dibanding IconButton
  *  default 48dp, supaya kolom nama/harga produk punya lebih banyak ruang di panel keranjang
- *  yang sempit. */
+ *  yang sempit. Warna latar & ikon di-set EKSPLISIT (bukan mengandalkan LocalContentColor
+ *  ambient) supaya kontras selalu terjamin di semua tema/warna toko. */
 @Composable
 private fun QtyStepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -887,13 +894,18 @@ private fun QtyStepButton(
 ) {
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(30.dp)
             .clip(androidx.compose.foundation.shape.CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(16.dp))
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
