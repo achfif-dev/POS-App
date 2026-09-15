@@ -29,6 +29,14 @@ jobs:
           cache: 'gradle'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # v: FIX build gagal "Warning: Failed to find package 'tools'" / exit code 1.
+          # Default input 'packages' action ini adalah "tools platform-tools", tapi paket
+          # legacy 'tools' (Android SDK Tools) sudah DIHAPUS total dari repository Google
+          # sehingga sdkmanager selalu gagal mencarinya. Kita tidak butuh paket 'tools' itu
+          # sama sekali -- platform & build-tools yang dipakai build ini sudah diinstal
+          # eksplisit di step berikutnya. Jadi cukup minta 'platform-tools' saja.
+          packages: "platform-tools"
       # v: migrasi target API 36/AGP 9.0 -- pasang eksplisit platform & build-tools yang
       # dibutuhkan compileSdk=36 (lihat app/build.gradle.kts). AGP BISA auto-download platform
       # yang belum terpasang, tapi dipasang eksplisit di sini supaya tidak bergantung ke
