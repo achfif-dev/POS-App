@@ -404,7 +404,21 @@ fun PosNavHost(sessionManager: SessionManager, autoLockManager: AutoLockManager)
                 val currentUser by sessionManager.currentUser.collectAsState()
                 val allowed = Permission.canManageProducts(currentUser, storeProfile.pinLoginEnabled)
                 RoleGatedRoute(allowed = allowed, navController = navController) {
-                    ProductScreen(onBack = { navController.popBackStack() })
+                    ProductScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenImport = { navController.navigate("product_import") }
+                    )
+                }
+            }
+        }
+        composable("product_import") {
+            AuthGatedRoute(blocking = isAuthGateBlocking()) {
+                val currentUser by sessionManager.currentUser.collectAsState()
+                val allowed = Permission.canManageProducts(currentUser, storeProfile.pinLoginEnabled)
+                RoleGatedRoute(allowed = allowed, navController = navController) {
+                    com.example.posapp.presentation.product.ProductImportScreen(
+                        onBack = { navController.popBackStack() }
+                    )
                 }
             }
         }
