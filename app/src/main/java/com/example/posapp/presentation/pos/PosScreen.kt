@@ -249,7 +249,13 @@ fun PosScreen(
             val isCompact = maxWidth < 600.dp
             val isExpanded = maxWidth >= 840.dp
             val gridWeight = if (isCompact) 1.1f else if (isExpanded) 1.8f else 1.4f
-            val gridMinSize = if (isCompact) 95.dp else if (isExpanded) 140.dp else 110.dp
+            // Diperkecil lagi (audit 2026-09-15): sebelumnya makin lebar layar (expanded/
+            // landscape tablet) minSize kartu justru DINAIKKAN (140dp) supaya "lega" -- tapi
+            // itu berlawanan dengan keinginan sebenarnya: makin lebar layar harusnya makin
+            // BANYAK produk per baris, bukan kartu makin besar. Sekarang minSize dibuat kecil
+            // & konsisten di semua kelas lebar supaya kepadatan grid tinggi di layar manapun,
+            // terutama landscape yang punya banyak ruang horizontal tapi tinggi terbatas.
+            val gridMinSize = if (isCompact) 90.dp else if (isExpanded) 100.dp else 95.dp
 
         Row(modifier = Modifier.fillMaxSize()) {
             // --- Panel Kiri: Grid Produk ---
@@ -340,7 +346,13 @@ fun PosScreen(
                         Text("Belum ada item", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.weight(1f)) {
+                    // heightIn(min) ditambahkan (audit 2026-09-15) sebagai jaga-jaga: weight(1f)
+                    // SEHARUSNYA sudah memberi LazyColumn ruang tegas (bukan overlap dengan
+                    // CartSummary di bawahnya karena keduanya sibling sejajar dalam Column,
+                    // bukan Box bertumpuk) -- tapi kalau laporan "menutupi item" berasal dari
+                    // build APK LAMA yang belum memakai kode terbaru ini, heightIn(min) minimal
+                    // memastikan area daftar item tidak pernah kolaps ke tinggi nyaris nol.
+                    LazyColumn(modifier = Modifier.weight(1f).heightIn(min = 72.dp)) {
                         items(uiState.cart.lines, key = { it.lineKey }) { line ->
                             CartLineRow(
                                 name = line.product.name + (line.variant?.let { " (${it.variantLabel})" } ?: ""),
@@ -354,6 +366,7 @@ fun PosScreen(
                             )
                         }
                     }
+                    HorizontalDivider()
                 }
 
                 CartSummary(cart = uiState.cart)
@@ -796,10 +809,10 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
                     }
                 }
             }
-            Column(Modifier.padding(6.dp)) {
-                Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(2.dp))
-                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodySmall, color = accent, fontWeight = FontWeight.Bold, maxLines = 1)
+            Column(Modifier.padding(4.dp)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(1.dp))
+                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.labelMedium, color = accent, fontWeight = FontWeight.Bold, maxLines = 1)
                 Spacer(Modifier.height(1.dp))
                 if (product.hasVariants) {
                     Text("Pilih varian", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
