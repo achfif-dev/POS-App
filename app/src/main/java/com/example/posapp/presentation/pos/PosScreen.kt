@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -262,12 +263,14 @@ fun PosScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
-                    // Diperlebar dari 140dp: kartu produk sekarang menaruh foto/ikon di
-                    // samping (bukan di atas) nama & harga, jadi butuh ruang horizontal
-                    // lebih agar teksnya tidak sempit/terpotong.
-                    columns = GridCells.Adaptive(minSize = 180.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Diperkecil dari 180dp -> 110dp (audit 2026-09-15): panel grid berbagi
+                    // lebar dengan panel keranjang (weight 1.4f banding 1f) sehingga di layar
+                    // portrait sempit 180dp cuma cukup untuk 1 kolom. 110dp membuat 2+ kolom
+                    // muat baik di portrait maupun landscape, kartu produk juga diperkecil
+                    // (lihat ProductCard) supaya tetap proporsional.
+                    columns = GridCells.Adaptive(minSize = 110.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(uiState.products, key = { it.id }) { product ->
                         ProductCard(
@@ -334,20 +337,42 @@ fun PosScreen(
                 Spacer(Modifier.height(8.dp))
                 // Tahan Transaksi (v15) — pelanggan belum selesai memilih/bayar, kasir bisa
                 // langsung melayani orang lain tanpa kehilangan keranjang yang sedang disusun.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                // Diperbaiki (audit 2026-09-15): contentPadding default OutlinedButton (~24dp
+                // horizontal) terlalu lebar untuk 2-3 tombol berbagi ruang sempit di panel
+                // keranjang, sehingga teks "Tahan"/"Diskon" kepotong dan turun baris. Padding
+                // dipersempit + teks dibuat 1 baris dengan ellipsis sebagai jaga-jaga kalau
+                // nominal diskon panjang.
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     if (!uiState.cart.isEmpty) {
-                        OutlinedButton(onClick = { showParkDialog = true }, modifier = Modifier.weight(1f)) {
-                            Text("Tahan")
+                        OutlinedButton(
+                            onClick = { showParkDialog = true },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Text("Tahan", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                         }
                         // Diskon transaksi (nominal Rupiah dari subtotal). Nilai yang diminta
                         // otomatis dipangkas sesuai kebijakan role kasir — lihat DiscountPolicy.kt.
-                        OutlinedButton(onClick = { showTransactionDiscountDialog = true }, modifier = Modifier.weight(1f)) {
-                            Text(if (uiState.cart.transactionDiscount > 0) "Diskon: ${rupiah.format(uiState.cart.transactionDiscount)}" else "Diskon")
+                        OutlinedButton(
+                            onClick = { showTransactionDiscountDialog = true },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                if (uiState.cart.transactionDiscount > 0) "Diskon: ${rupiah.format(uiState.cart.transactionDiscount)}" else "Diskon",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelMedium
+                            )
                         }
                     }
                     if (parkedSales.isNotEmpty()) {
-                        OutlinedButton(onClick = { showParkedListDialog = true }, modifier = Modifier.weight(1f)) {
-                            Text("Tertahan (${parkedSales.size})")
+                        OutlinedButton(
+                            onClick = { showParkedListDialog = true },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) {
+                            Text("Tertahan (${parkedSales.size})", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -699,12 +724,15 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
     val accent = accentColorFor(product.name)
     val isLowStock = !product.hasVariants && product.stock <= product.lowStockThreshold
 
+    // Diperkecil (audit 2026-09-15): padding, ukuran ikon, dan tipografi diturunkan supaya
+    // kartu tetap proporsional pada kolom grid yang lebih sempit (lihat GridCells.Adaptive
+    // minSize di atas, 180dp -> 110dp) dan lebih banyak produk muat per baris.
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1.2f)
+                    .aspectRatio(1.3f)
                     .background(accent.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -720,39 +748,39 @@ private fun ProductCard(product: ProductEntity, categoryName: String? = null, on
                         iconForCategory(categoryName),
                         contentDescription = null,
                         tint = accent,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
                 if (isLowStock) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(6.dp)
+                            .padding(4.dp)
                             .clip(MaterialTheme.shapes.small)
                             .background(MaterialTheme.colorScheme.errorContainer)
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 Icons.Default.WarningAmber,
                                 contentDescription = "Stok tipis",
                                 tint = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(10.dp)
                             )
                         }
                     }
                 }
             }
-            Column(Modifier.padding(10.dp)) {
-                Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(4.dp))
-                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodyMedium, color = accent, fontWeight = FontWeight.Bold)
+            Column(Modifier.padding(6.dp)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold, maxLines = 2, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(2.dp))
+                Text(rupiah.format(product.sellPrice), style = MaterialTheme.typography.bodySmall, color = accent, fontWeight = FontWeight.Bold, maxLines = 1)
+                Spacer(Modifier.height(1.dp))
                 if (product.hasVariants) {
-                    Text("Pilih varian", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    Text("Pilih varian", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 } else {
                     val stockColor = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.bodySmall, color = stockColor, maxLines = 1)
+                    Text("Stok: ${product.stock} ${product.unit}", style = MaterialTheme.typography.labelSmall, color = stockColor, maxLines = 1)
                 }
             }
         }
@@ -770,13 +798,33 @@ private fun CartLineRow(
     onDecrease: () -> Unit,
     onEditDiscount: () -> Unit
 ) {
+    // Diperbaiki (audit 2026-09-15): panel keranjang sempit (weight 1f) + dua IconButton
+    // ukuran default (48dp masing-masing) menyisakan sedikit ruang untuk Column(weight(1f)),
+    // sehingga nama produk & harga terpotong lalu turun baris. Solusi: nama & harga dibuat
+    // satu baris dengan ellipsis (tidak pernah wrap), dan tombol +/- diperkecil jadi tombol
+    // bundar 28dp custom (bukan IconButton 48dp) agar stepper qty tidak memakan banyak lebar.
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(name, maxLines = 1)
-            Text(rupiah.format(price), style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    rupiah.format(price),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             // Tombol diskon per-baris. Nilai yang diminta di dialog akan DIPANGKAS otomatis
             // oleh PosViewModel.updateLineDiscount sesuai role kasir yang login — lihat
             // DiscountPolicy.kt (TEMUAN KEAMANAN, audit ulang).
@@ -784,12 +832,43 @@ private fun CartLineRow(
                 if (discount > 0) "Diskon: -${rupiah.format(discount)} (ubah)" else "+ Diskon",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clickable { onEditDiscount() }
             )
         }
-        IconButton(onClick = onDecrease) { Icon(Icons.Default.Remove, contentDescription = "Kurangi") }
-        Text("$quantity $unit")
-        IconButton(onClick = onIncrease) { Icon(Icons.Default.Add, contentDescription = "Tambah") }
+        Spacer(Modifier.width(4.dp))
+        QtyStepButton(icon = Icons.Default.Remove, contentDescription = "Kurangi", onClick = onDecrease)
+        Text(
+            "$quantity $unit",
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.widthIn(min = 34.dp).padding(horizontal = 2.dp)
+        )
+        QtyStepButton(icon = Icons.Default.Add, contentDescription = "Tambah", onClick = onIncrease)
+    }
+}
+
+/** Tombol stepper qty bundar 28dp (dipakai di [CartLineRow]) — kompak dibanding IconButton
+ *  default 48dp, supaya kolom nama/harga produk punya lebih banyak ruang di panel keranjang
+ *  yang sempit. */
+@Composable
+private fun QtyStepButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(16.dp))
     }
 }
 
