@@ -48,6 +48,31 @@ object QrisUtil {
         return crc.toString(16).uppercase().padStart(4, '0')
     }
 
+    /** Cek struktur payload EMVCo dasar (bukan cuma "ada barcode yang terbaca") -- lihat
+     * dokumentasi kelas & catatan di [com.example.posapp.presentation.settings.StoreProfileViewModel.setQrisImagePath]
+     * untuk kenapa ini penting: sebelumnya pemeriksaan hanya "ML Kit berhasil baca SATU barcode
+     * apa saja" -- foto QR WiFi/kontak/tautan pun akan lolos dianggap "QRIS Dinamis aktif",
+     * padahal bukan payload pembayaran sama sekali, baru ketahuan gagal saat kasir benar-benar
+     * coba pakai di depan pelanggan. Di sini: parsing TLV harus selesai bersih sampai akhir
+     * (bukan terpotong), field "00" (Payload Format Indicator, wajib ada di SEMUA QR EMVCo) harus
+     * ada, dan CRC (tag 63) yang tertanam harus cocok dengan CRC yang dihitung ulang dari isi
+     * aslinya -- ini paling kuat membuktikan strukturnya benar-benar EMVCo, bukan teks kebetulan
+     * mirip. */
+    fun isValidQris(rawQris: String): Boolean {
+        val trimmed = rawQris.trim()
+        if (trimmed.length < 8) return false
+        val fields = parseTlv(trimmed)
+        if (fields.isEmpty() || fields.none { it.tag == "00" }) return false
+        // Parsing TLV harus menghabiskan SELURUH panjang teks tanpa sisa -- kalau parseTlv
+        // berhenti di tengah (length field rusak/tidak masuk akal), total panjang field yang
+        // berhasil dibaca akan lebih pendek dari `trimmed` aslinya.
+        val consumedLength = fields.sumOf { 4 + it.value.length }
+        if (consumedLength != trimmed.length) return false
+        val crcField = fields.lastOrNull { it.tag == "63" } ?: return false
+        val withoutCrcValue = trimmed.substring(0, trimmed.length - 4) // buang 4 hex CRC di ujung
+        return crc16(withoutCrcValue).equals(crcField.value, ignoreCase = true)
+    }
+
     /**
      * Sisipkan/timpa nominal transaksi (tag 54) ke dalam payload QRIS mentah, ubah indikator
      * metode inisiasi (tag 01) dari statis ("11") ke dinamis ("12"), lalu hitung ulang CRC (tag 63).

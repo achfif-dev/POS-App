@@ -19,7 +19,7 @@ data class GatewayCredentialsInput(
     val isProduction: Boolean,
 )
 
-enum class QrisChargeStatus { PENDING, SETTLED, EXPIRED, FAILED, CANCELLED }
+enum class QrisChargeStatus { PENDING, SETTLED, EXPIRED, FAILED, CANCELLED, AMOUNT_MISMATCH }
 
 data class QrisCharge(
     val orderId: String,
