@@ -1204,7 +1204,12 @@ private fun PaymentModal(
                     val qrisAutoViewModel: com.example.posapp.presentation.pos.QrisAutoPaymentViewModel = hiltViewModel()
                     val gatewayConfigured by qrisAutoViewModel.isConfigured.collectAsState()
                     val autoState by qrisAutoViewModel.uiState.collectAsState()
-                    val autoOrderId = remember { "TEMP-${System.currentTimeMillis()}" }
+                    // v: audit ulang QRIS+multi-cabang -- tambah komponen acak di akhir (bukan
+                    // cuma timestamp milidetik yang gampang ditebak/tabrakan) sebagai pertahanan
+                    // berlapis TAMBAHAN di atas perbaikan ownerUid di firestore.rules/
+                    // createQrisCharge -- mengurangi ruang tebakan lebih jauh lagi, dan mencegah
+                    // tabrakan orderId kalau dua charge tercipta di milidetik yang sama persis.
+                    val autoOrderId = remember { "TEMP-${System.currentTimeMillis()}-${(1000..9999).random()}" }
 
                     // BUG PENTING (ditemukan saat audit ulang): qrisAutoViewModel didapat lewat
                     // hiltViewModel() yang di-scope ke NavBackStackEntry rute "pos" — instance-nya
@@ -1267,6 +1272,22 @@ private fun PaymentModal(
                                 LaunchedEffect(autoState.status) {
                                     payments.add(com.example.posapp.domain.usecase.PaymentSplit(PaymentMethod.QRIS, settledAmount.toDouble()))
                                 }
+                            }
+                            // v: audit ulang QRIS dinamis -- AMOUNT_MISMATCH TIDAK BOLEH jatuh ke
+                            // cabang `else` di bawah (yang menampilkan ulang QR + "Menunggu
+                            // pembayaran"), karena pelanggan SUDAH membayar (cuma nominalnya
+                            // tidak cocok dgn yang dicatat) -- menampilkan QR lagi akan mendorong
+                            // pelanggan bayar KEDUA KALINYA (double charge). Jangan otomatis
+                            // ditambahkan ke `payments` juga -- ini butuh pengecekan manual dulu.
+                            autoState.status == com.example.posapp.data.payment.QrisChargeStatus.AMOUNT_MISMATCH -> {
+                                Text(
+                                    "⚠ Midtrans mencatat pembayaran MASUK tapi nominalnya tidak cocok. " +
+                                        "JANGAN tandai lunas otomatis — cek dashboard Midtrans dulu untuk " +
+                                        "nominal sebenarnya sebelum melanjutkan transaksi ini.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                             else -> {
                                 autoState.charge?.qrisImageUrl?.let { url ->

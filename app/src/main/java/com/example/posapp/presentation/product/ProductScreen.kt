@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -55,7 +56,8 @@ private val rupiah: NumberFormat = NumberFormat.getCurrencyInstance(Locale("in",
 @Composable
 fun ProductScreen(
     viewModel: ProductViewModel = hiltViewModel(),
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onOpenImport: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -89,6 +91,11 @@ fun ProductScreen(
                     }
                 },
                 actions = {
+                    // Import Produk Massal (v16) -- sudah dibangun lengkap sebelumnya (parser,
+                    // use case, layar preview) tapi belum ada titik masuk di UI mana pun.
+                    IconButton(onClick = onOpenImport) {
+                        Icon(Icons.Default.UploadFile, contentDescription = "Import Produk Massal")
+                    }
                     TextButton(onClick = { showCategoryDialog = true }) { Text("Kategori") }
                 }
             )

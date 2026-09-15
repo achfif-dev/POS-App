@@ -73,11 +73,21 @@ class StoreProfileViewModel @Inject constructor(
                 return@launch
             }
             val rawContent = qrisImageDecoder.decode(path)
-            storeProfileRepository.updateQrisRawContent(rawContent)
+            // v: audit ulang QRIS dinamis -- sebelumnya di sini cuma dicek `rawContent != null`
+            // (artinya "ML Kit berhasil baca SATU barcode apa saja"), bukan apakah isinya benar
+            // payload QRIS. Sekarang divalidasi strukturnya lewat QrisUtil.isValidQris (cek
+            // field wajib + CRC cocok) sebelum dianggap sah -- kalau tidak valid, DIANGGAP SAMA
+            // seperti gagal dibaca (rawContent disimpan null), supaya tidak salah mengklaim
+            // "QRIS Dinamis aktif" untuk QR yang sebenarnya bukan QRIS sama sekali.
+            val validatedRawContent = rawContent?.takeIf { com.example.posapp.data.qris.QrisUtil.isValidQris(it) }
+            storeProfileRepository.updateQrisRawContent(validatedRawContent)
             _events.emit(
                 StoreProfileEvent.ShowMessage(
-                    if (rawContent != null) "Gambar QRIS tersimpan — QRIS Dinamis aktif (nominal otomatis)"
-                    else "Gambar QRIS tersimpan, tapi kode QR tidak terbaca — nominal tidak akan otomatis terisi"
+                    when {
+                        validatedRawContent != null -> "Gambar QRIS tersimpan — QRIS Dinamis aktif (nominal otomatis)"
+                        rawContent != null -> "Gambar QRIS tersimpan, tapi kode QR yang terbaca BUKAN QRIS yang valid — nominal tidak akan otomatis terisi. Pastikan foto memang QRIS pembayaran, bukan kode QR lain."
+                        else -> "Gambar QRIS tersimpan, tapi kode QR tidak terbaca — nominal tidak akan otomatis terisi"
+                    }
                 )
             )
         }
